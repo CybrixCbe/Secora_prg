@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { NavLink, Link, useNavigate, useLocation } from 'react-router-dom';
 import { Menu, X, LogOut, Shield, Search, Terminal } from 'lucide-react';
-import { api } from '../services/api';
+import { useAuth } from '../context/AuthContext';
 import secoraLogo from '../assets/secora-logo.png';
 import secoraFoliage from '../assets/secora-foliage.jpg';
 
@@ -11,37 +11,23 @@ interface LayoutProps {
 
 export default function Layout({ children }: LayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [user, setUser] = useState<{ username: string; role: string; profile_image?: string; full_name?: string } | null>(null);
-  const [authChecked, setAuthChecked] = useState(false);
+  const { user, loading, signOut } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
   useEffect(() => {
-    api.getSession()
-      .then(res => {
-        if (res.authenticated) {
-          setUser({
-            username: res.username,
-            role: res.role,
-            profile_image: res.profile_image,
-            full_name: res.full_name
-          });
-          setAuthChecked(true);
-        } else {
-          navigate('/login');
-        }
-      })
-      .catch(() => {
-        navigate('/login');
-      });
-  }, [navigate, location.pathname]);
+    if (!loading && !user) {
+      navigate('/login');
+    }
+  }, [loading, user, navigate]);
 
   const handleLogout = async () => {
     try {
-      await api.logout();
+      await signOut();
       navigate('/login');
     } catch (err) {
       console.error("Logout failed:", err);
+      navigate('/login');
     }
   };
 
@@ -60,7 +46,7 @@ export default function Layout({ children }: LayoutProps) {
   };
 
   // Show loading spinner while session is being verified
-  if (!authChecked) {
+  if (loading) {
     return (
       <div className="min-h-screen bg-[#06100e] flex items-center justify-center">
         <div className="flex flex-col items-center gap-4">
@@ -69,6 +55,10 @@ export default function Layout({ children }: LayoutProps) {
         </div>
       </div>
     );
+  }
+
+  if (!user) {
+    return null;
   }
 
   return (
@@ -150,23 +140,24 @@ export default function Layout({ children }: LayoutProps) {
           <div className="p-4 border border-white/10 bg-[#0a1815] flex flex-col gap-3 rounded-md m-3 shadow-sm relative overflow-hidden">
             <div className="flex items-center justify-between relative z-10">
               <div className="flex items-center gap-3 min-w-0">
-                {user.profile_image ? (
+                {user.photoURL ? (
                   <img 
-                    src={user.profile_image} 
-                    alt={user.username} 
+                    src={user.photoURL} 
+                    alt={user.displayName || user.username} 
+                    referrerPolicy="no-referrer"
                     className="h-8 w-8 rounded-full object-cover border border-emerald-400 shrink-0" 
                   />
                 ) : (
                   <div className="h-8 w-8 rounded-full bg-emerald-700/60 border border-emerald-500/40 flex items-center justify-center text-emerald-200 font-bold text-xs shrink-0">
-                    {user.username.substring(0, 2).toUpperCase()}
+                    {(user.displayName || user.username).substring(0, 2).toUpperCase()}
                   </div>
                 )}
                 <div className="flex flex-col min-w-0">
-                  <span className="font-heading font-bold text-xs text-white truncate">
-                    {user.full_name || user.username.toUpperCase()}
+                  <span className="font-heading font-bold text-xs text-white truncate" title={user.displayName || user.username}>
+                    {user.displayName || user.full_name || user.username}
                   </span>
-                  <span className="text-[9px] text-emerald-400 font-mono tracking-wider uppercase">
-                    ● AUTHENTICATED
+                  <span className="text-[9px] text-emerald-400 font-mono tracking-wider uppercase truncate" title={user.email || ''}>
+                    {user.email ? user.email : '● AUTHENTICATED'}
                   </span>
                 </div>
               </div>

@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Settings, Shield, Laptop, Database, KeyRound, AlertTriangle, CheckCircle, RefreshCw, User, Camera, Upload, Trash2 } from 'lucide-react';
 import { api } from '../services/api';
+import { useAuth } from '../context/AuthContext';
 
 export default function SettingsPage() {
+  const { user: authUser } = useAuth();
   const [defaultScanType, setDefaultScanType] = useState('Quick');
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const [theme, setTheme] = useState('light');
@@ -37,12 +39,18 @@ export default function SettingsPage() {
         setNotificationsEnabled(s.notifications_enabled === 1);
         setTheme(s.theme || 'light');
 
-        if (profileRes) {
+        if (profileRes && (profileRes.username || profileRes.email)) {
           setUsername(profileRes.username || '');
           setFullName(profileRes.full_name || '');
           setEmail(profileRes.email || '');
           setOrganization(profileRes.organization || '');
           setProfileImage(profileRes.profile_image || '');
+        } else if (authUser) {
+          setUsername(authUser.username || '');
+          setFullName(authUser.displayName || authUser.full_name || '');
+          setEmail(authUser.email || '');
+          setOrganization(authUser.organization || 'Secora Security Operations');
+          setProfileImage(authUser.photoURL || '');
         }
         setLoading(false);
       })

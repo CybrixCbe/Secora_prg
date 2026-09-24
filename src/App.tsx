@@ -9,11 +9,13 @@ import Intelligence from './pages/Intelligence';
 import HistoryPage from './pages/History';
 import Reports from './pages/Reports';
 import SettingsPage from './pages/Settings';
+import { AuthProvider } from './context/AuthContext';
 
 export default function App() {
   return (
     <BrowserRouter basename={import.meta.env.BASE_URL}>
-      <Routes>
+      <AuthProvider>
+        <Routes>
         <Route path="/" element={<Landing />} />
         <Route path="/login" element={<Login />} />
         <Route path="/signup" element={<Login initialStep="register" />} />
@@ -31,6 +33,7 @@ export default function App() {
         
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
-    </BrowserRouter>
+    </AuthProvider>
+  </BrowserRouter>
   );
 }

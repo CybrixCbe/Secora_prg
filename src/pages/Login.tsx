@@ -12,11 +12,10 @@ import {
   User,
   Check,
   X,
-  ChevronRight,
-  Plus,
   Loader2
 } from 'lucide-react';
 import { api } from '../services/api';
+import { useAuth } from '../context/AuthContext';
 import secoraLogo from '../assets/secora-logo.png';
 import secoraFoliage from '../assets/secora-foliage.jpg';
 
@@ -59,13 +58,9 @@ export default function Login({ initialStep }: LoginProps) {
   const [purpose, setPurpose] = useState('Research');
   const [experience, setExperience] = useState('Beginner');
 
-  // Google SSO Modal State
-  const [showGoogleModal, setShowGoogleModal] = useState(false);
+  // Google Authentication State
+  const { user: authUser, loading: authLoading, signInWithGoogle } = useAuth();
   const [googleLoading, setGoogleLoading] = useState(false);
-  const [customGoogleEmail, setCustomGoogleEmail] = useState('');
-  const [customGoogleName, setCustomGoogleName] = useState('');
-  const [showCustomGoogleInput, setShowCustomGoogleInput] = useState(false);
-  const [googleAuthError, setGoogleAuthError] = useState('');
 
   // Password Strength calculation
   const getPasswordStrength = (pass: string) => {
@@ -86,14 +81,10 @@ export default function Login({ initialStep }: LoginProps) {
 
   // Check if session already active
   useEffect(() => {
-    api.getSession()
-      .then(res => {
-        if (res.authenticated) {
-          navigate('/dashboard');
-        }
-      })
-      .catch(() => {});
-  }, [navigate]);
+    if (!authLoading && authUser) {
+      navigate('/dashboard');
+    }
+  }, [authLoading, authUser, navigate]);
 
   // Demo auto-fill convenience
   const handleQuickDemoFill = () => {
@@ -103,47 +94,16 @@ export default function Login({ initialStep }: LoginProps) {
     setSuccess('Loaded demo analyst credentials.');
   };
 
-  const handleOpenGoogleModal = () => {
-    setGoogleAuthError('');
-    setShowGoogleModal(true);
-  };
-
-  const handleGoogleSignIn = async (accountEmail: string, accountName: string, picture?: string) => {
+  const handleGoogleSignIn = async () => {
     setGoogleLoading(true);
-    setGoogleAuthError('');
     setError('');
+    setSuccess('');
     try {
-      // Build a standard JWT format token payload for server decoding
-      const header = btoa(JSON.stringify({ alg: "HS256", typ: "JWT" }));
-      const payload = btoa(JSON.stringify({
-        email: accountEmail.toLowerCase().trim(),
-        name: accountName.trim() || accountEmail.split('@')[0],
-        picture: picture || '',
-        sub: `google-${accountEmail}`,
-        email_verified: true,
-      }));
-      const credentialToken = `${header}.${payload}.secora_verified_sso`;
-
-      const res = await api.googleAuth({
-        credential: credentialToken,
-        email: accountEmail.toLowerCase().trim(),
-        name: accountName.trim() || accountEmail.split('@')[0],
-        picture: picture || '',
-      });
-
-      if (res && res.authenticated) {
-        setShowGoogleModal(false);
-        if (res.profile_completed === 0) {
-          setStep('profile');
-        } else {
-          navigate('/dashboard');
-        }
-      } else {
-        throw new Error("Unable to establish secure session.");
-      }
+      await signInWithGoogle();
+      navigate('/dashboard');
     } catch (err: any) {
-      console.error("Google authentication error:", err);
-      setGoogleAuthError(err.message || "Failed to authenticate with Google.");
+      console.error("[Login] Google authentication failed:", err);
+      setError(err.message || "Failed to authenticate with Google.");
     } finally {
       setGoogleLoading(false);
     }
@@ -709,29 +669,38 @@ export default function Login({ initialStep }: LoginProps) {
 
                 <button
                   type="button"
-                  onClick={handleOpenGoogleModal}
-                  disabled={loading}
+                  onClick={handleGoogleSignIn}
+                  disabled={loading || googleLoading}
                   className="w-full flex items-center justify-center gap-3 bg-white/5 hover:bg-white/10 border border-white/10 text-white/90 py-3 px-4 rounded-md text-xs font-medium tracking-wide transition-colors cursor-pointer disabled:opacity-50 group hover:border-emerald-500/40"
                 >
-                  <svg className="h-4 w-4 shrink-0" viewBox="0 0 24 24">
-                    <path
-                      fill="#4285F4"
-                      d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                    />
-                    <path
-                      fill="#34A853"
-                      d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                    />
-                    <path
-                      fill="#FBBC05"
-                      d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
-                    />
-                    <path
-                      fill="#EA4335"
-                      d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
-                    />
-                  </svg>
-                  <span>Continue with Google</span>
+                  {googleLoading ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin text-emerald-400" />
+                      <span>Signing in with Google...</span>
+                    </>
+                  ) : (
+                    <>
+                      <svg className="h-4 w-4 shrink-0" viewBox="0 0 24 24">
+                        <path
+                          fill="#4285F4"
+                          d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                        />
+                        <path
+                          fill="#34A853"
+                          d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                        />
+                        <path
+                          fill="#FBBC05"
+                          d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
+                        />
+                        <path
+                          fill="#EA4335"
+                          d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
+                        />
+                      </svg>
+                      <span>Continue with Google</span>
+                    </>
+                  )}
                 </button>
               </>
             )}
@@ -800,208 +769,6 @@ export default function Login({ initialStep }: LoginProps) {
         </div>
 
       </div>
-
-      {/* Google Single Sign-On Account Chooser Modal */}
-      {showGoogleModal && (
-        <div 
-          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200"
-          onClick={() => {
-            if (!googleLoading) setShowGoogleModal(false);
-          }}
-        >
-          <div 
-            className="relative w-full max-w-md bg-[#0a1714] border border-emerald-500/30 rounded-2xl shadow-2xl overflow-hidden p-6 sm:p-7 flex flex-col gap-5 text-white"
-            onClick={e => e.stopPropagation()}
-          >
-            {/* Modal Header */}
-            <div className="flex items-start justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-white flex items-center justify-center shadow-md">
-                  <svg className="h-5 w-5" viewBox="0 0 24 24">
-                    <path
-                      fill="#4285F4"
-                      d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                    />
-                    <path
-                      fill="#34A853"
-                      d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                    />
-                    <path
-                      fill="#FBBC05"
-                      d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
-                    />
-                    <path
-                      fill="#EA4335"
-                      d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
-                    />
-                  </svg>
-                </div>
-                <div>
-                  <h3 className="font-heading font-semibold text-base text-white">Sign in with Google</h3>
-                  <p className="text-xs text-white/60">Choose an account to continue to SECORA</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowGoogleModal(false)}
-                disabled={googleLoading}
-                className="text-white/40 hover:text-white p-1 rounded-md transition-colors cursor-pointer disabled:opacity-50"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            {/* Error Notification */}
-            {googleAuthError && (
-              <div className="p-3 bg-red-950/70 border border-red-500/40 rounded-lg text-xs text-red-200 flex items-start gap-2">
-                <AlertCircle className="h-4 w-4 text-red-400 shrink-0 mt-0.5" />
-                <span>{googleAuthError}</span>
-              </div>
-            )}
-
-            {/* Loading Indicator Overlay */}
-            {googleLoading ? (
-              <div className="py-10 flex flex-col items-center justify-center gap-3">
-                <Loader2 className="h-8 w-8 text-emerald-400 animate-spin" />
-                <p className="font-mono text-xs text-emerald-400">Verifying Google SSO credentials...</p>
-                <p className="text-[11px] text-white/50">Establishing encrypted analyst session...</p>
-              </div>
-            ) : (
-              <>
-                {/* Account Selection Options */}
-                <div className="flex flex-col gap-2.5">
-                  
-                  {/* Primary Account: User's Account */}
-                  <button
-                    type="button"
-                    onClick={() => handleGoogleSignIn('snaveenkumar070@gmail.com', 'Naveen Kumar')}
-                    className="w-full flex items-center gap-3.5 p-3.5 rounded-xl bg-white/[0.03] hover:bg-emerald-950/40 border border-white/10 hover:border-emerald-500/40 text-left transition-all group cursor-pointer"
-                  >
-                    <div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold text-sm shadow-md shrink-0">
-                      N
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="font-heading font-medium text-sm text-white group-hover:text-emerald-300 truncate">
-                          Naveen Kumar
-                        </span>
-                        <span className="px-1.5 py-0.5 rounded text-[8.5px] font-mono font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                          ONE-TAP
-                        </span>
-                      </div>
-                      <p className="text-xs text-white/50 truncate font-mono mt-0.5">
-                        snaveenkumar070@gmail.com
-                      </p>
-                    </div>
-                    <ChevronRight className="h-4 w-4 text-white/30 group-hover:text-emerald-400 group-hover:translate-x-1 transition-all shrink-0" />
-                  </button>
-
-                  {/* Secondary Account: Lead Security Analyst */}
-                  <button
-                    type="button"
-                    onClick={() => handleGoogleSignIn('analyst@secora.internal', 'Lead Security Analyst')}
-                    className="w-full flex items-center gap-3.5 p-3.5 rounded-xl bg-white/[0.03] hover:bg-emerald-950/40 border border-white/10 hover:border-emerald-500/40 text-left transition-all group cursor-pointer"
-                  >
-                    <div className="w-10 h-10 rounded-full bg-emerald-700 flex items-center justify-center text-white font-bold text-sm shadow-md shrink-0">
-                      S
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="font-heading font-medium text-sm text-white group-hover:text-emerald-300 truncate">
-                          Secora Lab Analyst
-                        </span>
-                        <span className="px-1.5 py-0.5 rounded text-[8.5px] font-mono font-bold bg-blue-500/20 text-blue-400 border border-blue-500/30">
-                          INTERNAL
-                        </span>
-                      </div>
-                      <p className="text-xs text-white/50 truncate font-mono mt-0.5">
-                        analyst@secora.internal
-                      </p>
-                    </div>
-                    <ChevronRight className="h-4 w-4 text-white/30 group-hover:text-emerald-400 group-hover:translate-x-1 transition-all shrink-0" />
-                  </button>
-
-                  {/* Option 3: Custom Google Account Toggle */}
-                  {!showCustomGoogleInput ? (
-                    <button
-                      type="button"
-                      onClick={() => setShowCustomGoogleInput(true)}
-                      className="w-full flex items-center gap-3.5 p-3.5 rounded-xl bg-white/[0.02] hover:bg-white/[0.05] border border-dashed border-white/15 text-left transition-all group cursor-pointer"
-                    >
-                      <div className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-white/70 group-hover:text-white shrink-0">
-                        <Plus className="h-4 w-4" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <span className="font-heading font-medium text-xs text-white/80 group-hover:text-white block">
-                          Use another Google account
-                        </span>
-                        <p className="text-[11px] text-white/40">Enter any Google Workspace or Gmail address</p>
-                      </div>
-                      <ChevronRight className="h-4 w-4 text-white/30 group-hover:text-white group-hover:translate-x-1 transition-all shrink-0" />
-                    </button>
-                  ) : (
-                    <form 
-                      onSubmit={(e) => {
-                        e.preventDefault();
-                        if (customGoogleEmail) {
-                          handleGoogleSignIn(customGoogleEmail, customGoogleName || customGoogleEmail.split('@')[0]);
-                        }
-                      }}
-                      className="p-4 bg-black/40 border border-emerald-500/30 rounded-xl flex flex-col gap-3"
-                    >
-                      <div className="flex items-center justify-between">
-                        <label className="text-[10px] font-heading font-bold text-emerald-400 uppercase tracking-wider">
-                          Enter Google Account Email
-                        </label>
-                        <button
-                          type="button"
-                          onClick={() => setShowCustomGoogleInput(false)}
-                          className="text-[10px] text-white/40 hover:text-white underline cursor-pointer"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                      
-                      <input
-                        type="email"
-                        required
-                        value={customGoogleEmail}
-                        onChange={e => setCustomGoogleEmail(e.target.value)}
-                        placeholder="yourname@gmail.com"
-                        className="w-full px-3 py-2 bg-black/60 border border-white/20 focus:border-emerald-400 rounded-md text-xs text-white outline-none"
-                        autoFocus
-                      />
-
-                      <input
-                        type="text"
-                        value={customGoogleName}
-                        onChange={e => setCustomGoogleName(e.target.value)}
-                        placeholder="Display Name (optional)"
-                        className="w-full px-3 py-2 bg-black/60 border border-white/20 focus:border-emerald-400 rounded-md text-xs text-white outline-none"
-                      />
-
-                      <button
-                        type="submit"
-                        disabled={!customGoogleEmail}
-                        className="w-full py-2.5 px-4 bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-xs rounded-md shadow-md transition-colors cursor-pointer disabled:opacity-50"
-                      >
-                        Sign in with this Account
-                      </button>
-                    </form>
-                  )}
-
-                </div>
-
-                {/* Footer Disclaimer */}
-                <div className="pt-3 border-t border-white/10 text-[10px] text-white/40 leading-relaxed">
-                  SECORA requests basic profile information (name, email) to establish your authenticated security workstation persona.
-                </div>
-              </>
-            )}
-
-          </div>
-        </div>
-      )}
 
     </div>
   );
