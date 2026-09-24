@@ -93,3 +93,54 @@ export function waitForGoogleScript(timeoutMs = 6000): Promise<boolean> {
     }, interval);
   });
 }
+
+/**
+ * Prompts Google OAuth 2.0 account selector popup using Google Identity Services token client.
+ */
+export async function requestGoogleAccessToken(clientId: string): Promise<{
+  sub: string;
+  name?: string;
+  given_name?: string;
+  family_name?: string;
+  picture?: string;
+  email: string;
+  email_verified?: boolean;
+  accessToken: string;
+}> {
+  return new Promise((resolve, reject) => {
+    if (typeof window === 'undefined' || !(window as any).google?.accounts?.oauth2) {
+      return reject(new Error('Google Identity Services script not ready. Please try again in a moment.'));
+    }
+
+    try {
+      const client = (window as any).google.accounts.oauth2.initTokenClient({
+        client_id: clientId,
+        scope: 'email profile openid',
+        callback: async (response: any) => {
+          if (response.error) {
+            return reject(new Error(response.error_description || response.error));
+          }
+          try {
+            const userInfoRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+              headers: { Authorization: `Bearer ${response.access_token}` },
+            });
+            if (!userInfoRes.ok) {
+              throw new Error(`Failed to retrieve profile: ${userInfoRes.statusText}`);
+            }
+            const profile = await userInfoRes.json();
+            resolve({
+              ...profile,
+              accessToken: response.access_token,
+            });
+          } catch (fetchErr) {
+            reject(fetchErr);
+          }
+        },
+      });
+
+      client.requestAccessToken({ prompt: 'select_account' });
+    } catch (err) {
+      reject(err);
+    }
+  });
+}

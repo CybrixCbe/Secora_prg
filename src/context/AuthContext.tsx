@@ -11,7 +11,7 @@ import {
   type FirebaseUser,
 } from '../lib/firebase';
 
-import { decodeGoogleIdToken, type GoogleIdTokenPayload } from '../lib/googleAuth';
+import { decodeGoogleIdToken, getGoogleClientId, requestGoogleAccessToken, type GoogleIdTokenPayload } from '../lib/googleAuth';
 import { api } from '../services/api';
 
 export interface SecoraUser {
@@ -218,51 +218,89 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
    * Popup-based sign in via Firebase Google Provider.
    */
   const signInWithGoogle = async (): Promise<SecoraUser> => {
-    if (!isFirebaseConfigured || !auth) {
-      throw new Error(
-        'Google authentication configuration missing. Please set VITE_GOOGLE_CLIENT_ID or VITE_FIREBASE_* in your environment.'
-      );
-    }
-
-    try {
-      const result = await signInWithPopup(auth, googleProvider);
-      const fbUser = result.user;
-
-      const secoraUser: SecoraUser = {
-        uid: fbUser.uid,
-        email: fbUser.email,
-        displayName: fbUser.displayName,
-        photoURL: fbUser.photoURL,
-        username: fbUser.displayName || fbUser.email?.split('@')[0] || 'Analyst',
-        full_name: fbUser.displayName || '',
-        role: 'Security Analyst',
-      };
-
+    // 1. Try Google Identity Services OAuth 2.0 Token Client (Custom Button Popup)
+    const clientId = await getGoogleClientId();
+    if (clientId && typeof window !== 'undefined' && (window as any).google?.accounts?.oauth2) {
       try {
-        const idToken = await fbUser.getIdToken();
-        secoraUser.idToken = idToken;
-        await api.googleAuth({
-          credential: idToken,
-          email: fbUser.email || '',
-          name: fbUser.displayName || '',
-          picture: fbUser.photoURL || '',
-        });
-      } catch {
-        // Backend offline / static GitHub Pages
+        const googleProfile = await requestGoogleAccessToken(clientId);
+        const secoraUser: SecoraUser = {
+          uid: googleProfile.sub,
+          email: googleProfile.email,
+          displayName: googleProfile.name || googleProfile.given_name || googleProfile.email.split('@')[0],
+          photoURL: googleProfile.picture || null,
+          username: googleProfile.name || googleProfile.email.split('@')[0],
+          full_name: googleProfile.name || '',
+          role: 'Security Analyst',
+          idToken: googleProfile.accessToken,
+        };
+
+        setUser(secoraUser);
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(secoraUser));
+        } catch {}
+
+        try {
+          await api.googleAuth({
+            credential: googleProfile.accessToken,
+            email: googleProfile.email,
+            name: googleProfile.name || '',
+            picture: googleProfile.picture || '',
+          });
+        } catch {}
+
+        return secoraUser;
+      } catch (gisErr: any) {
+        console.warn('[AuthContext] GIS token client note:', gisErr);
+        if (gisErr?.message?.includes('closed') || gisErr?.message?.includes('user')) {
+          throw gisErr;
+        }
       }
-
-      setUser(secoraUser);
-      setFirebaseUser(fbUser);
-      try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(secoraUser));
-      } catch {}
-
-      return secoraUser;
-    } catch (error: any) {
-      console.error('[AuthContext] Google sign-in failed:', error);
-      const friendlyMessage = mapFirebaseAuthError(error);
-      throw new Error(friendlyMessage);
     }
+
+    // 2. Try Firebase Google Auth Popup
+    if (isFirebaseConfigured && auth) {
+      try {
+        const result = await signInWithPopup(auth, googleProvider);
+        const fbUser = result.user;
+
+        const secoraUser: SecoraUser = {
+          uid: fbUser.uid,
+          email: fbUser.email,
+          displayName: fbUser.displayName,
+          photoURL: fbUser.photoURL,
+          username: fbUser.displayName || fbUser.email?.split('@')[0] || 'Analyst',
+          full_name: fbUser.displayName || '',
+          role: 'Security Analyst',
+        };
+
+        try {
+          const idToken = await fbUser.getIdToken();
+          secoraUser.idToken = idToken;
+          await api.googleAuth({
+            credential: idToken,
+            email: fbUser.email || '',
+            name: fbUser.displayName || '',
+            picture: fbUser.photoURL || '',
+          });
+        } catch {}
+
+        setUser(secoraUser);
+        setFirebaseUser(fbUser);
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(secoraUser));
+        } catch {}
+
+        return secoraUser;
+      } catch (error: any) {
+        console.error('[AuthContext] Firebase Google sign-in failed:', error);
+        const friendlyMessage = mapFirebaseAuthError(error);
+        throw new Error(friendlyMessage);
+      }
+    }
+
+    throw new Error(
+      'Google authentication configuration missing. Please ensure your Google Client ID is configured in .env'
+    );
   };
 
   /**
