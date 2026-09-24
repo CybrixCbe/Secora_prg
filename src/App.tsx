@@ -10,11 +10,14 @@ import HistoryPage from './pages/History';
 import Reports from './pages/Reports';
 import SettingsPage from './pages/Settings';
 import { AuthProvider } from './context/AuthContext';
+import { ErrorBoundary } from './components/ErrorBoundary';
 
 export default function App() {
   return (
-    <BrowserRouter basename={import.meta.env.BASE_URL}>
-      <AuthProvider>
+    <ErrorBoundary>
+      <BrowserRouter basename={import.meta.env.BASE_URL}>
+        <AuthProvider>
+
         <Routes>
         <Route path="/" element={<Landing />} />
         <Route path="/login" element={<Login />} />
@@ -30,10 +33,11 @@ export default function App() {
         <Route path="/history" element={<Layout><HistoryPage /></Layout>} />
         <Route path="/reports" element={<Layout><Reports /></Layout>} />
         <Route path="/settings" element={<Layout><SettingsPage /></Layout>} />
-        
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
-    </AuthProvider>
-  </BrowserRouter>
+      </AuthProvider>
+    </BrowserRouter>
+  </ErrorBoundary>
   );
 }
+
