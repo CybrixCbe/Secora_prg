@@ -14,7 +14,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 const HOST = '0.0.0.0';
 
 app.use(express.json({ limit: '10mb' }));
@@ -1507,9 +1507,13 @@ async function startServer() {
       appType: 'spa',
     });
     app.use(vite.middlewares);
+    app.get('/', (_req, res) => {
+      res.redirect('/Secora_prg/');
+    });
   } else {
     const distPath = path.resolve(__dirname, 'dist');
     if (fs.existsSync(distPath)) {
+      app.use('/Secora_prg', express.static(distPath));
       app.use(express.static(distPath));
       app.get('*', (req, res) => {
         res.sendFile(path.resolve(distPath, 'index.html'));

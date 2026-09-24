@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { Shield, Eye, Radio, ArrowRight, Terminal, CheckCircle2, Lock, Activity, Cpu } from 'lucide-react';
 import secoraLogo from '../assets/secora-logo.png';
 import secoraFoliage from '../assets/secora-foliage.jpg';
@@ -492,8 +492,8 @@ export default function Landing() {
           <div className="flex gap-12 font-mono text-xs">
             <div className="flex flex-col gap-2">
               <span className="text-[9px] text-emerald-400 uppercase">[01] Navigation</span>
-              <a href="/login" className="text-white/60 hover:text-white transition-colors">Sign In</a>
-              <a href="/register" className="text-white/60 hover:text-white transition-colors">Register</a>
+              <Link to="/login" className="text-white/60 hover:text-white transition-colors">Sign In</Link>
+              <Link to="/register" className="text-white/60 hover:text-white transition-colors">Register</Link>
             </div>
             <div className="flex flex-col gap-2">
               <span className="text-[9px] text-emerald-400 uppercase">[02] Workstation</span>
