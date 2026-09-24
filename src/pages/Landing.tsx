@@ -25,16 +25,8 @@ export default function Landing() {
             <span className="font-mono text-[8px] text-white/50 tracking-wider">RECONNAISSANCE PLATFORM</span>
           </div>
         </div>
-        <div className="flex items-center gap-6">
-          <span className="hidden sm:inline font-mono text-[10px] text-emerald-400 uppercase tracking-widest">[SYS_ID: SEC-ART-648]</span>
-          <button
-            onClick={() => navigate('/login')}
-            className="font-heading text-xs uppercase tracking-widest px-5 py-2 bg-white/5 hover:bg-emerald-500/20 border border-white/15 hover:border-emerald-400 text-white hover:text-emerald-300 transition-all rounded-xs cursor-pointer"
-          >
-            Sign In →
-          </button>
-        </div>
       </header>
+
 
       <main className="pt-16 flex-grow">
         
@@ -85,12 +77,8 @@ export default function Landing() {
                   <span className="font-bold">EXPLORE SECORA</span>
                   <span className="group-hover:translate-x-1 transition-transform">→</span>
                 </button>
-                
-                <div className="flex items-center gap-3 bg-black/40 border border-white/10 px-4 py-3 rounded-xs">
-                  <span className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.8)]"></span>
-                  <span className="font-mono text-[9px] text-white/80 uppercase tracking-wider">PASSIVE INTELLIGENCE / ZERO-INTRUSION</span>
-                </div>
               </div>
+
             </div>
 
             {/* Tactical Radar HUD Console */}
