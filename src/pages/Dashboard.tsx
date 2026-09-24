@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Shield, Activity, Terminal, AlertTriangle, CheckCircle2, ArrowRight, Radio, Search } from 'lucide-react';
+import { Shield, Activity, Terminal, AlertTriangle, CheckCircle2, ArrowRight, Radio } from 'lucide-react';
+
 import { api } from '../services/api';
 
 export default function Dashboard() {
@@ -8,10 +9,8 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   
-  // Quick scan target field
-  const [quickTarget, setQuickTarget] = useState('');
-
   // Chat Widget State
+
   const [chatMessage, setChatMessage] = useState('');
   const [chatHistory, setChatHistory] = useState<Array<{ sender: 'user' | 'ai'; text: string }>>([
     { sender: 'ai', text: 'Analyst session connected. Ask me anything regarding perimeter exposures, DNS misconfigurations, SSL cipher weaknesses, or security mitigations.' }
@@ -75,13 +74,8 @@ export default function Dashboard() {
     }
   };
 
-  const handleQuickScan = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!quickTarget.trim()) return;
-    navigate(`/reconnaissance?target=${encodeURIComponent(quickTarget.trim())}`);
-  };
-
   if (loading) {
+
     return (
       <div className="flex-grow flex items-center justify-center min-h-[60vh]">
         <div className="flex flex-col items-center gap-3">
@@ -135,27 +129,19 @@ export default function Dashboard() {
               </p>
             </div>
 
-            {/* Quick Recon Search Bar */}
-            <form onSubmit={handleQuickScan} className="flex flex-col sm:flex-row gap-2 max-w-xl">
-              <div className="relative flex-grow">
-                <Search className="h-4 w-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-white/40" />
-                <input 
-                  type="text"
-                  value={quickTarget}
-                  onChange={e => setQuickTarget(e.target.value)}
-                  placeholder="Target domain or IP (e.g., example.com)"
-                  className="w-full bg-black/50 border border-white/15 focus:border-emerald-400 text-white placeholder-white/30 text-xs py-3 pl-10 pr-4 outline-none transition-colors rounded-xs"
-                />
-              </div>
+            {/* Quick Recon Action */}
+            <div className="pt-2">
               <button 
-                type="submit"
-                className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-mono font-bold tracking-wider uppercase px-6 py-3 transition-colors flex items-center justify-center gap-2 rounded-xs shrink-0 cursor-pointer shadow-md"
+                type="button"
+                onClick={() => navigate('/reconnaissance')}
+                className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-mono font-bold tracking-wider uppercase px-6 py-3 transition-all flex items-center justify-center gap-2 rounded-xs shrink-0 cursor-pointer shadow-md hover:shadow-emerald-900/40 group"
               >
                 <span>EXECUTE SWEEP</span>
-                <ArrowRight className="h-3.5 w-3.5" />
+                <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
               </button>
-            </form>
+            </div>
           </div>
+
           
           {/* Abstract Telemetry Indicator */}
           <div className="hidden lg:flex col-span-4 relative flex-col justify-between p-6 border border-white/10 bg-black/30 rounded-xs">

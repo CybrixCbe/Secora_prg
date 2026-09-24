@@ -192,17 +192,11 @@ export default function Layout({ children }: LayoutProps) {
           </div>
           
           <div className="flex items-center gap-6">
-            <Link 
-              to="/reconnaissance"
-              className="hidden md:flex items-center gap-2 px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-sm text-xs font-mono text-white/80 hover:text-emerald-300 transition-colors"
-            >
-              <Search className="h-3 w-3 text-emerald-400" />
-              <span>NEW SCAN</span>
-            </Link>
             <div className="hidden sm:flex items-center gap-2">
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
               <span className="font-heading text-[9px] text-white/70 tracking-widest uppercase">SYS.STATUS / ONLINE</span>
             </div>
+
             <div className="hidden sm:block h-4 w-px bg-white/10"></div>
             <div className="font-mono text-[9px] text-white/50 tracking-widest">SECORA.OS / V1.0</div>
           </div>
