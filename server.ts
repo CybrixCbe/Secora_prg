@@ -206,13 +206,35 @@ const sampleResults1 = {
         'referrer-policy': 'strict-origin-when-cross-origin',
         server: 'cloudflare',
       },
+      security_headers: {
+        'X-Frame-Options': 'Absent',
+        'Content-Security-Policy': "default-src 'self'; frame-ancestors 'self'",
+        'Strict-Transport-Security': 'max-age=31536000; includeSubDomains; preload',
+        'X-Content-Type-Options': 'nosniff',
+        'Referrer-Policy': 'strict-origin-when-cross-origin',
+      },
+      clickjacking: {
+        status: 'Protected',
+        is_vulnerable: false,
+        vulnerable: false,
+        protection_mechanism: 'Content-Security-Policy: frame-ancestors',
+        x_frame_options: 'None (Protected via CSP frame-ancestors)',
+        csp_frame_ancestors: "frame-ancestors 'self'",
+        details: "Application is protected against clickjacking via Content-Security-Policy frame-ancestors directive.",
+        explanation: "Application is protected against clickjacking via Content-Security-Policy frame-ancestors directive.",
+        message: "Application is protected against clickjacking via Content-Security-Policy frame-ancestors directive.",
+      },
     },
     clickjacking: {
-      status: 'success',
+      status: 'Protected',
       is_vulnerable: false,
+      vulnerable: false,
+      protection_mechanism: 'Content-Security-Policy: frame-ancestors',
       x_frame_options: 'None (Protected via CSP frame-ancestors)',
       csp_frame_ancestors: "frame-ancestors 'self'",
       details: "Application is protected against clickjacking via Content-Security-Policy frame-ancestors directive.",
+      explanation: "Application is protected against clickjacking via Content-Security-Policy frame-ancestors directive.",
+      message: "Application is protected against clickjacking via Content-Security-Policy frame-ancestors directive.",
     },
     portscan: {
       status: 'success',
@@ -620,111 +642,141 @@ async function executePortSweep(target: string, ports: number[] = COMMON_PORTS):
 }
 
 async function checkHttpHeaders(target: string): Promise<any> {
-  return new Promise(resolve => {
-    const url = `https://${target}`;
-    const req = https.get(
-      url,
-      {
-        headers: { 'User-Agent': 'Secora-Security-Recon/1.0' },
-        rejectUnauthorized: false,
-        timeout: 4000,
+  const tryFetch = async (protocol: 'https' | 'http') => {
+    const url = `${protocol}://${target}`;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+    try {
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36 Secora/1.0',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        },
+        signal: controller.signal,
+        redirect: 'follow',
+      });
+      clearTimeout(timeoutId);
+
+      const normalizedHeaders: Record<string, string> = {};
+      response.headers.forEach((val, key) => {
+        normalizedHeaders[key.toLowerCase()] = val;
+      });
+
+      return { ok: true, headers: normalizedHeaders, status: response.status, url };
+    } catch (e: any) {
+      clearTimeout(timeoutId);
+      return { ok: false, error: e?.message || 'Connection failed' };
+    }
+  };
+
+  // 1. Attempt HTTPS first; if port 443 fails or times out, fallback to plain HTTP (port 80)
+  let fetchRes = await tryFetch('https');
+  if (!fetchRes.ok) {
+    const httpRes = await tryFetch('http');
+    if (httpRes.ok) {
+      fetchRes = httpRes;
+    }
+  }
+
+  // 2. If both failed, return structured error
+  if (!fetchRes.ok) {
+    const errClickjacking = {
+      status: 'Unreachable',
+      is_vulnerable: true,
+      vulnerable: true,
+      x_frame_options: 'Unreachable',
+      csp_frame_ancestors: 'None',
+      details: 'Unable to evaluate HTTP headers because target host did not respond on HTTP/HTTPS.',
+      explanation: 'Unable to evaluate HTTP headers because target host did not respond on HTTP/HTTPS.',
+      message: 'Unable to evaluate HTTP headers because target host did not respond on HTTP/HTTPS.',
+    };
+
+    return {
+      status: 'error',
+      error_msg: fetchRes.error || 'HTTP/HTTPS connection refused or timed out',
+      msg: fetchRes.error || 'HTTP/HTTPS connection refused or timed out',
+      headers: {},
+      security_headers: {
+        'X-Frame-Options': 'Unreachable',
+        'Content-Security-Policy': 'None',
       },
-      res => {
-        const rawHeaders = res.headers;
-        const normalizedHeaders: Record<string, string> = {};
-        for (const [k, v] of Object.entries(rawHeaders)) {
-          if (Array.isArray(v)) normalizedHeaders[k.toLowerCase()] = v.join('; ');
-          else if (v) normalizedHeaders[k.toLowerCase()] = v;
-        }
+      present_headers: [],
+      missing_headers: [
+        'strict-transport-security',
+        'content-security-policy',
+        'x-frame-options',
+        'x-content-type-options',
+        'referrer-policy',
+        'permissions-policy',
+      ],
+      clickjacking: errClickjacking,
+    };
+  }
 
-        const standardSecurityHeaders = [
-          'strict-transport-security',
-          'content-security-policy',
-          'x-frame-options',
-          'x-content-type-options',
-          'referrer-policy',
-          'permissions-policy',
-        ];
+  const normalizedHeaders = fetchRes.headers;
+  const standardSecurityHeaders = [
+    'strict-transport-security',
+    'content-security-policy',
+    'x-frame-options',
+    'x-content-type-options',
+    'referrer-policy',
+    'permissions-policy',
+  ];
 
-        const presentHeaders: string[] = [];
-        const missingHeaders: string[] = [];
+  const presentHeaders: string[] = [];
+  const missingHeaders: string[] = [];
 
-        for (const h of standardSecurityHeaders) {
-          if (normalizedHeaders[h]) presentHeaders.push(h);
-          else missingHeaders.push(h);
-        }
+  for (const h of standardSecurityHeaders) {
+    if (normalizedHeaders[h]) presentHeaders.push(h);
+    else missingHeaders.push(h);
+  }
 
-        const xfo = normalizedHeaders['x-frame-options'] || '';
-        const csp = normalizedHeaders['content-security-policy'] || '';
-        const hasFrameAncestors = csp.toLowerCase().includes('frame-ancestors');
-        const hasXfo = xfo.toUpperCase().includes('DENY') || xfo.toUpperCase().includes('SAMEORIGIN');
+  const xfo = normalizedHeaders['x-frame-options'] || '';
+  const csp = normalizedHeaders['content-security-policy'] || '';
+  const hasFrameAncestors = csp.toLowerCase().includes('frame-ancestors');
+  const hasXfo = xfo.toUpperCase().includes('DENY') || xfo.toUpperCase().includes('SAMEORIGIN');
 
-        const clickjackingProtected = hasXfo || hasFrameAncestors;
+  const clickjackingProtected = hasXfo || hasFrameAncestors;
 
-        resolve({
-          status: 'success',
-          headers: normalizedHeaders,
-          present_headers: presentHeaders,
-          missing_headers: missingHeaders,
-          clickjacking: {
-            is_vulnerable: !clickjackingProtected,
-            x_frame_options: xfo || 'Not Set',
-            csp_frame_ancestors: hasFrameAncestors ? 'frame-ancestors present' : 'Not configured',
-            details: clickjackingProtected
-              ? 'Target enforces framing restriction headers protecting against clickjacking attacks.'
-              : 'Missing both X-Frame-Options and CSP frame-ancestors; target is potentially vulnerable to UI redressing.',
-          },
-        });
-      }
-    );
+  const clickjackingObj = {
+    status: clickjackingProtected ? 'Protected' : 'Vulnerable',
+    is_vulnerable: !clickjackingProtected,
+    vulnerable: !clickjackingProtected,
+    protection_mechanism: hasXfo
+      ? `X-Frame-Options: ${xfo}`
+      : hasFrameAncestors
+      ? 'Content-Security-Policy: frame-ancestors'
+      : 'None',
+    x_frame_options: xfo || 'Not Set',
+    csp_frame_ancestors: hasFrameAncestors ? 'frame-ancestors configured' : 'Not configured',
+    details: clickjackingProtected
+      ? 'Target enforces framing restriction headers protecting against clickjacking attacks.'
+      : 'Missing both X-Frame-Options and CSP frame-ancestors; target is potentially vulnerable to UI redressing (Clickjacking).',
+    explanation: clickjackingProtected
+      ? 'Target enforces framing restriction headers (X-Frame-Options / CSP frame-ancestors) preventing malicious iframe embedding.'
+      : 'Missing both X-Frame-Options and CSP frame-ancestors; web pages can be embedded within third-party iframes, exposing visitors to UI redressing and click hijacking attacks.',
+    message: clickjackingProtected
+      ? 'Target enforces framing restriction headers protecting against clickjacking attacks.'
+      : 'Missing both X-Frame-Options and CSP frame-ancestors; target is potentially vulnerable to UI redressing.',
+  };
 
-    req.on('error', err => {
-      resolve({
-        status: 'error',
-        error_msg: err.message || 'HTTP request failed',
-        headers: {},
-        present_headers: [],
-        missing_headers: [
-          'strict-transport-security',
-          'content-security-policy',
-          'x-frame-options',
-          'x-content-type-options',
-          'referrer-policy',
-          'permissions-policy',
-        ],
-        clickjacking: {
-          is_vulnerable: true,
-          x_frame_options: 'Unreachable',
-          csp_frame_ancestors: 'None',
-          details: 'Unable to evaluate HTTP headers.',
-        },
-      });
-    });
-
-    req.on('timeout', () => {
-      req.destroy();
-      resolve({
-        status: 'error',
-        error_msg: 'HTTP request timed out',
-        headers: {},
-        present_headers: [],
-        missing_headers: [
-          'strict-transport-security',
-          'content-security-policy',
-          'x-frame-options',
-          'x-content-type-options',
-          'referrer-policy',
-          'permissions-policy',
-        ],
-        clickjacking: {
-          is_vulnerable: true,
-          x_frame_options: 'Timed out',
-          csp_frame_ancestors: 'None',
-          details: 'Request timed out.',
-        },
-      });
-    });
-  });
+  return {
+    status: 'success',
+    headers: normalizedHeaders,
+    security_headers: {
+      'X-Frame-Options': xfo || 'Absent',
+      'Content-Security-Policy': csp || 'Absent',
+      'Strict-Transport-Security': normalizedHeaders['strict-transport-security'] || 'Absent',
+      'X-Content-Type-Options': normalizedHeaders['x-content-type-options'] || 'Absent',
+      'Referrer-Policy': normalizedHeaders['referrer-policy'] || 'Absent',
+      'Permissions-Policy': normalizedHeaders['permissions-policy'] || 'Absent',
+    },
+    present_headers: presentHeaders,
+    missing_headers: missingHeaders,
+    clickjacking: clickjackingObj,
+  };
 }
 
 function calculateRisk(dnsMod: any, sslMod: any, headersMod: any, portMod: any) {

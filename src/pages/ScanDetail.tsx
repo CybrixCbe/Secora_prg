@@ -443,47 +443,140 @@ export default function ScanDetail() {
             {/* 6. Clickjacking Tab */}
             {activeTab === 'clickjacking' && (
               <div className="space-y-6">
-                <div className="border-b border-border pb-4">
-                  <h3 className="font-heading font-black text-sm text-text-primary uppercase tracking-wider">Clickjacking Vulnerability Audit</h3>
-                  <p className="text-[11px] text-text-secondary">Checks if target allows frame rendering inside third-party scopes.</p>
+                <div className="border-b border-border pb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                  <div>
+                    <h3 className="font-heading font-black text-sm text-text-primary uppercase tracking-wider">Clickjacking Vulnerability Audit</h3>
+                    <p className="text-[11px] text-text-secondary">Inspects framing restrictions (X-Frame-Options & CSP frame-ancestors) to detect UI redressing risks.</p>
+                  </div>
+                  {(() => {
+                    const cj = modules.clickjacking || modules.headers?.clickjacking;
+                    if (!cj) return null;
+                    const isVuln = cj.is_vulnerable ?? cj.vulnerable ?? (String(cj.status || '').toLowerCase() === 'vulnerable');
+                    return (
+                      <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-mono font-bold rounded-sm border uppercase tracking-wider self-start sm:self-auto ${
+                        isVuln ? 'bg-red-500/10 text-red-400 border-red-500/30' : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                      }`}>
+                        <span className={`h-1.5 w-1.5 rounded-full ${isVuln ? 'bg-red-500 threat-pulse' : 'bg-emerald-500'}`}></span>
+                        <span>{isVuln ? 'Vulnerable Target' : 'Framing Restricted (Protected)'}</span>
+                      </span>
+                    );
+                  })()}
                 </div>
 
-                {!modules.headers ? (
-                  <div className="p-8 text-center text-xs text-text-secondary uppercase border border-border bg-surface-muted rounded-md">
-                    Headers module was not included in this scan.
-                  </div>
-                ) : modules.headers.status === 'error' ? (
-                  <div className="p-6 border border-amber-100 bg-amber-50 rounded-md space-y-2">
-                    <span className="font-heading font-bold text-xs text-amber-700 uppercase">Headers Module Error</span>
-                    <p className="text-xs text-amber-600 leading-relaxed">{modules.headers.msg || 'Could not connect to target to perform header analysis.'}</p>
-                    <p className="text-[10px] text-amber-500 italic mt-2">Clickjacking assessment requires a successful HTTP connection to the target.</p>
-                  </div>
-                ) : !modules.headers.clickjacking ? (
-                  <div className="p-8 text-center text-xs text-text-secondary uppercase border border-border bg-surface-muted rounded-md">
-                    No Clickjacking assessment results loaded.
-                  </div>
-                ) : (
-                  <div className="p-6 border border-border bg-surface-muted rounded-md space-y-4">
-                    <div className="flex items-center gap-3">
-                      <div className={`h-3 w-3 rounded-full ${modules.headers.clickjacking.vulnerable ? 'bg-red-600 animate-ping' : 'bg-emerald-500'}`}></div>
-                      <span className="font-heading font-bold text-xs uppercase text-text-primary">
-                        {modules.headers.clickjacking.vulnerable ? "Vulnerable Target" : "Secured Target"}
-                      </span>
-                      <span className={`text-[9px] font-mono px-2 py-0.5 rounded-full border ${modules.headers.clickjacking.vulnerable ? 'text-red-700 bg-red-50 border-red-200' : 'text-emerald-700 bg-emerald-50 border-emerald-200'}`}>
-                        {modules.headers.clickjacking.status}
-                      </span>
-                    </div>
+                {(() => {
+                  const cj = modules.clickjacking || modules.headers?.clickjacking;
+                  if (!modules.headers && !cj) {
+                    return (
+                      <div className="p-8 text-center text-xs text-text-secondary uppercase border border-border bg-surface-muted rounded-md">
+                        Headers and Clickjacking modules were not included in this scan.
+                      </div>
+                    );
+                  }
 
-                    <p className="text-xs text-text-secondary leading-relaxed">
-                      {modules.headers.clickjacking.explanation || modules.headers.clickjacking.message}
-                    </p>
+                  if (!cj && modules.headers?.status === 'error') {
+                    return (
+                      <div className="p-6 border border-amber-500/30 bg-amber-500/10 rounded-md space-y-2">
+                        <span className="font-heading font-bold text-xs text-amber-400 uppercase">Headers Diagnostic Warning</span>
+                        <p className="text-xs text-text-secondary leading-relaxed">{modules.headers.error_msg || modules.headers.msg || 'Could not connect to target to inspect HTTP response headers.'}</p>
+                        <p className="text-[10px] text-amber-400/80 italic mt-2">Clickjacking assessment requires an active HTTP/HTTPS connection to probe framing headers.</p>
+                      </div>
+                    );
+                  }
 
-                    <div className="text-[10px] font-mono text-text-secondary bg-surface border border-border p-4 rounded-sm">
-                      <div className="mb-1"><span className="font-bold">X-Frame-Options:</span> {modules.headers.security_headers?.['X-Frame-Options'] || "Absent"}</div>
-                      <div><span className="font-bold">Content-Security-Policy:</span> {modules.headers.security_headers?.['Content-Security-Policy'] || "Absent"}</div>
+                  if (!cj) {
+                    return (
+                      <div className="p-8 text-center text-xs text-text-secondary uppercase border border-border bg-surface-muted rounded-md">
+                        No Clickjacking assessment telemetry recorded for this host.
+                      </div>
+                    );
+                  }
+
+                  const isVuln = cj.is_vulnerable ?? cj.vulnerable ?? (String(cj.status || '').toLowerCase() === 'vulnerable');
+                  const xfo = cj.x_frame_options || modules.headers?.security_headers?.['X-Frame-Options'] || modules.headers?.headers?.['x-frame-options'] || 'Not Set';
+                  const csp = cj.csp_frame_ancestors || modules.headers?.security_headers?.['Content-Security-Policy'] || modules.headers?.headers?.['content-security-policy'] || 'Not Configured';
+                  const details = cj.explanation || cj.details || cj.message || (
+                    isVuln
+                      ? 'The target does not enforce framing restriction headers (X-Frame-Options or CSP frame-ancestors). An attacker can render this page in a transparent <iframe> on an external domain and trick authenticated users into unauthorized clicks.'
+                      : 'The target successfully restricts framing rendering via security headers, protecting end-users against UI redressing and click hijacking attacks.'
+                  );
+
+                  const xfoActive = xfo !== 'Not Set' && xfo !== 'Absent' && xfo !== 'None' && xfo !== 'Unreachable';
+                  const cspActive = csp.toLowerCase().includes('frame-ancestors') || (csp !== 'Not Configured' && csp !== 'Absent' && csp !== 'None' && csp !== 'Unreachable');
+
+                  return (
+                    <div className="space-y-6">
+                      {/* Overview Threat Card */}
+                      <div className={`p-6 border rounded-md space-y-3 ${
+                        isVuln ? 'bg-red-950/20 border-red-500/30' : 'bg-emerald-950/20 border-emerald-500/30'
+                      }`}>
+                        <div className="flex items-center gap-2.5">
+                          <span className={`h-2.5 w-2.5 rounded-full ${isVuln ? 'bg-red-500 threat-pulse' : 'bg-emerald-500'}`} />
+                          <h4 className="font-heading font-bold text-sm text-text-primary uppercase tracking-wide">
+                            {isVuln ? 'Threat Detected: Vulnerable to Clickjacking' : 'Security Clearance: Clickjacking Mitigated'}
+                          </h4>
+                        </div>
+                        <p className="text-xs text-text-secondary leading-relaxed font-body">
+                          {details}
+                        </p>
+                      </div>
+
+                      {/* Header Defense Matrix */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 font-mono text-xs">
+                        {/* X-Frame-Options Matrix Card */}
+                        <div className="p-4 bg-surface border border-border rounded-md space-y-2">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] uppercase tracking-wider text-text-secondary font-bold">X-Frame-Options</span>
+                            <span className={`text-[9px] px-2 py-0.5 rounded-sm font-bold uppercase ${
+                              xfoActive ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30' : 'bg-red-500/10 text-red-400 border border-red-500/30'
+                            }`}>
+                              {xfoActive ? 'Enforced' : 'Missing'}
+                            </span>
+                          </div>
+                          <div className="p-2.5 bg-surface-muted border border-border/60 rounded text-text-primary text-[11px] truncate select-all">
+                            {xfo}
+                          </div>
+                          <p className="text-[10px] text-text-secondary font-body">
+                            Standard header directive (DENY / SAMEORIGIN) indicating whether a browser can render the page inside a frame.
+                          </p>
+                        </div>
+
+                        {/* CSP Frame-Ancestors Matrix Card */}
+                        <div className="p-4 bg-surface border border-border rounded-md space-y-2">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] uppercase tracking-wider text-text-secondary font-bold">CSP frame-ancestors</span>
+                            <span className={`text-[9px] px-2 py-0.5 rounded-sm font-bold uppercase ${
+                              cspActive ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30' : 'bg-red-500/10 text-red-400 border border-red-500/30'
+                            }`}>
+                              {cspActive ? 'Enforced' : 'Missing'}
+                            </span>
+                          </div>
+                          <div className="p-2.5 bg-surface-muted border border-border/60 rounded text-text-primary text-[11px] truncate select-all">
+                            {csp}
+                          </div>
+                          <p className="text-[10px] text-text-secondary font-body">
+                            Modern W3C standard directive replacing X-Frame-Options to control allowed embedding origins.
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Remediation Hardening Block */}
+                      {isVuln && (
+                        <div className="p-5 bg-surface border border-border rounded-md space-y-3">
+                          <span className="text-[10px] font-mono tracking-widest text-text-secondary uppercase block font-bold">
+                            Recommended Hardening Directive
+                          </span>
+                          <p className="text-xs text-text-secondary font-body leading-relaxed">
+                            To remediate clickjacking vulnerabilities, instruct the web server or edge proxy to append the following HTTP response headers:
+                          </p>
+                          <div className="p-3 bg-surface-muted border border-border font-mono text-[11px] text-emerald-400 rounded-sm space-y-1 select-all">
+                            <div>X-Frame-Options: SAMEORIGIN</div>
+                            <div>Content-Security-Policy: frame-ancestors 'self';</div>
+                          </div>
+                        </div>
+                      )}
                     </div>
-                  </div>
-                )}
+                  );
+                })()}
               </div>
             )}
 
