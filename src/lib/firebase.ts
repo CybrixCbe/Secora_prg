@@ -2,6 +2,8 @@ import { initializeApp, getApps, getApp, type FirebaseApp } from "firebase/app";
 import {
   getAuth,
   GoogleAuthProvider,
+  GithubAuthProvider,
+
   signInWithPopup,
   signOut as firebaseSignOut,
   onAuthStateChanged,
@@ -32,6 +34,10 @@ googleProvider.setCustomParameters({
   prompt: "select_account",
 });
 
+const githubProvider = new GithubAuthProvider();
+githubProvider.addScope("read:user");
+githubProvider.addScope("user:email");
+
 if (isFirebaseConfigured) {
   try {
     app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
@@ -41,8 +47,9 @@ if (isFirebaseConfigured) {
   }
 }
 
-export { app, auth, googleProvider, firebaseSignOut, signInWithPopup, onAuthStateChanged };
+export { app, auth, googleProvider, githubProvider, firebaseSignOut, signInWithPopup, onAuthStateChanged };
 export type { FirebaseUser };
+
 
 /**
  * Maps Firebase auth error codes to clean, human-readable user messages.
@@ -53,9 +60,9 @@ export function mapFirebaseAuthError(error: any): string {
 
   switch (code) {
     case "auth/popup-closed-by-user":
-      return "Google sign-in was cancelled.";
+      return "Sign-in popup was closed before completing authentication.";
     case "auth/popup-blocked":
-      return "Google sign-in popup was blocked by your browser. Please allow popups for this site.";
+      return "Sign-in popup was blocked by your browser. Please allow popups for this site.";
     case "auth/unauthorized-domain":
       return "Unauthorized domain. Please add this domain to Firebase Console -> Authentication -> Settings -> Authorized domains.";
     case "auth/invalid-api-key":
@@ -65,14 +72,15 @@ export function mapFirebaseAuthError(error: any): string {
     case "auth/cancelled-popup-request":
       return "Sign-in request was cancelled.";
     case "auth/account-exists-with-different-credential":
-      return "An account already exists with the same email using a different sign-in method.";
+      return "An account already exists with the same email using a different sign-in provider (e.g. Google). Please sign in with that provider.";
     case "auth/operation-not-allowed":
-      return "Google sign-in is not enabled in Firebase Console. Enable it under Authentication -> Sign-in method -> Google.";
+      return "This provider is not enabled in Firebase Console. Enable it under Authentication -> Sign-in method.";
     case "auth/user-disabled":
       return "This account has been disabled by an administrator.";
     case "auth/configuration-missing":
-      return "Firebase configuration is missing. Please set VITE_FIREBASE_* environment variables.";
+      return "Authentication configuration is missing. Please set VITE_FIREBASE_* environment variables.";
     default:
-      return error.message || "Google sign-in failed. Please try again.";
+      return error.message || "Authentication failed. Please try again.";
   }
 }
+

@@ -37,6 +37,14 @@ export const api = {
     });
   },
 
+  async githubAuth(payload: { credential?: string; email?: string; name?: string; picture?: string; username?: string }) {
+    return request(`${API_BASE}/api/auth/github`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+
+
   async login(payload: any) {
     return request(`${API_BASE}/api/login`, {
       method: "POST",

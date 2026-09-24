@@ -722,6 +722,60 @@ app.post('/api/auth/google', (req, res) => {
   });
 });
 
+app.post('/api/auth/github', (req, res) => {
+  const { credential, email: bodyEmail, name: bodyName, picture: bodyPicture, username: bodyUsername } = req.body || {};
+  let email = (bodyEmail || '').trim().toLowerCase();
+  let name = bodyName || bodyUsername || '';
+  let picture = bodyPicture || '';
+
+  if (!email && bodyUsername) {
+    email = `${bodyUsername.toLowerCase()}@github.com`;
+  }
+  if (!email) {
+    email = 'github.analyst@secora.local';
+  }
+  if (!name) {
+    name = email.split('@')[0];
+  }
+
+  let user = usersByEmail.get(email.toLowerCase());
+  if (!user) {
+    user = {
+      id: nextUserId++,
+      username: (bodyUsername || email.split('@')[0]).replace(/[^a-zA-Z0-9_]/g, '_'),
+      email: email.toLowerCase(),
+      password: 'GitHubSSOPassword!',
+      role: 'User',
+      full_name: name,
+      organization: 'GitHub Verified Researcher',
+      experience_level: 'Intermediate',
+      purpose: 'Security Assessment',
+      profile_completed: 1,
+      profile_image: picture,
+      created_at: new Date().toISOString().replace('T', ' ').substring(0, 19),
+    };
+    users.set(user.id, user);
+    usersByEmail.set(user.email, user);
+    userSettings.set(user.id, { default_scan_type: 'quick', notifications_enabled: 1, theme: 'dark' });
+    logActivity(user.id, 'GitHub SSO Sign Up', `New account created via GitHub OAuth: ${email}`, req.ip);
+  } else {
+    if (picture && !user.profile_image) {
+      user.profile_image = picture;
+    }
+    logActivity(user.id, 'GitHub SSO Login', `Logged in via GitHub OAuth: ${email}`, req.ip);
+  }
+
+  setSessionCookie(res, user);
+  res.json({
+    status: 'success',
+    authenticated: true,
+    username: user.username,
+    role: user.role,
+    profile_completed: user.profile_completed,
+  });
+});
+
+
 app.post('/api/login', (req, res) => {
   const { email, username, password } = req.body || {};
   const query = (email || username || '').toLowerCase().trim();

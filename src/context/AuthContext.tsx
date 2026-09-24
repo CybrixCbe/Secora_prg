@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import {
   auth,
   googleProvider,
+  githubProvider,
   signInWithPopup,
   firebaseSignOut,
   onAuthStateChanged,
@@ -9,6 +10,7 @@ import {
   mapFirebaseAuthError,
   type FirebaseUser,
 } from '../lib/firebase';
+
 import { decodeGoogleIdToken, type GoogleIdTokenPayload } from '../lib/googleAuth';
 import { api } from '../services/api';
 
@@ -30,7 +32,9 @@ interface AuthContextType {
   loading: boolean;
   isFirebaseReady: boolean;
   signInWithGoogle: () => Promise<SecoraUser>;
+  signInWithGithub: () => Promise<SecoraUser>;
   loginWithGoogleIdToken: (idToken: string) => Promise<SecoraUser>;
+
   signOut: () => Promise<void>;
   setUser: React.Dispatch<React.SetStateAction<SecoraUser | null>>;
 }
@@ -261,6 +265,58 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  /**
+   * Popup-based sign in via Firebase GitHub Provider.
+   */
+  const signInWithGithub = async (): Promise<SecoraUser> => {
+    if (!isFirebaseConfigured || !auth) {
+      throw new Error(
+        'GitHub authentication requires Firebase credentials. Please add VITE_FIREBASE_* in your environment.'
+      );
+    }
+
+    try {
+      const result = await signInWithPopup(auth, githubProvider);
+      const fbUser = result.user;
+
+      const secoraUser: SecoraUser = {
+        uid: fbUser.uid,
+        email: fbUser.email,
+        displayName: fbUser.displayName || 'GitHub Researcher',
+        photoURL: fbUser.photoURL,
+        username: fbUser.displayName || fbUser.email?.split('@')[0] || 'GitHub_Analyst',
+        full_name: fbUser.displayName || '',
+        role: 'Security Analyst',
+      };
+
+      try {
+        const idToken = await fbUser.getIdToken();
+        secoraUser.idToken = idToken;
+        await api.githubAuth({
+          credential: idToken,
+          email: fbUser.email || '',
+          name: fbUser.displayName || '',
+          picture: fbUser.photoURL || '',
+          username: fbUser.displayName || '',
+        });
+      } catch {
+        // Backend offline / static GitHub Pages
+      }
+
+      setUser(secoraUser);
+      setFirebaseUser(fbUser);
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(secoraUser));
+      } catch {}
+
+      return secoraUser;
+    } catch (error: any) {
+      console.error('[AuthContext] GitHub sign-in failed:', error);
+      const friendlyMessage = mapFirebaseAuthError(error);
+      throw new Error(friendlyMessage);
+    }
+  };
+
   const signOut = async (): Promise<void> => {
     try {
       if (auth) {
@@ -297,6 +353,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         loading,
         isFirebaseReady: isFirebaseConfigured,
         signInWithGoogle,
+        signInWithGithub,
         loginWithGoogleIdToken,
         signOut,
         setUser,
@@ -304,6 +361,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     >
       {children}
     </AuthContext.Provider>
+
   );
 }
 

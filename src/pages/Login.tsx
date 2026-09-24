@@ -1,69 +1,46 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useNavigate, useLocation, Link } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { 
   ArrowLeft, 
   CheckCircle2, 
   AlertCircle,
-  Eye, 
-  EyeOff,
   Shield,
   Lock,
-  Mail,
-  User,
-  Check,
-  X,
   Loader2
 } from 'lucide-react';
-import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { getGoogleClientId, waitForGoogleScript } from '../lib/googleAuth';
 import secoraLogo from '../assets/secora-logo.png';
 import secoraFoliage from '../assets/secora-foliage.jpg';
 
-type AuthStep = 'login' | 'register' | 'otp' | 'profile' | 'forgot' | 'reset';
-
 interface LoginProps {
   initialStep?: string;
 }
 
-export default function Login({ initialStep }: LoginProps) {
-  const location = useLocation();
+export default function Login(_props: LoginProps = {}) {
   const navigate = useNavigate();
 
-  // Determine initial step based on prop or route
-  const getInitialStep = (): AuthStep => {
-    if (initialStep === 'register' || location.pathname === '/signup' || location.pathname === '/register') {
-      return 'register';
-    }
-    if (initialStep === 'forgot' || location.pathname === '/forgot' || location.pathname === '/forgot-password') {
-      return 'forgot';
-    }
-    return 'login';
-  };
-
-  const [step, setStep] = useState<AuthStep>(getInitialStep);
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
-  const [rememberMe, setRememberMe] = useState(true);
-
-  // Form Fields
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [username, setUsername] = useState('');
-  const [otp, setOtp] = useState('');
-  const [fullName, setFullName] = useState('');
-  const [organization, setOrganization] = useState('');
-  const [purpose, setPurpose] = useState('Research');
-  const [experience, setExperience] = useState('Beginner');
-
-  // Google Authentication State
-  const { user: authUser, loading: authLoading, signInWithGoogle, loginWithGoogleIdToken, setUser } = useAuth();
   const [googleLoading, setGoogleLoading] = useState(false);
+  const [githubLoading, setGithubLoading] = useState(false);
   const [gisReady, setGisReady] = useState(false);
   const googleBtnContainerRef = useRef<HTMLDivElement>(null);
+
+  const { 
+    user: authUser, 
+    loading: authLoading, 
+    signInWithGoogle, 
+    signInWithGithub, 
+    loginWithGoogleIdToken 
+  } = useAuth();
+
+  // If already logged in, redirect straight to dashboard
+  useEffect(() => {
+    if (!authLoading && authUser) {
+      navigate('/dashboard');
+    }
+  }, [authLoading, authUser, navigate]);
 
   // Initialize Google Identity Services (GIS)
   useEffect(() => {
@@ -83,7 +60,7 @@ export default function Login({ initialStep }: LoginProps) {
             if (response?.credential) {
               setGoogleLoading(true);
               setError('');
-              setSuccess('Google ID token received. Verifying analyst identity...');
+              setSuccess('Google ID token verified. Loading workstation...');
               try {
                 await loginWithGoogleIdToken(response.credential);
                 navigate('/dashboard');
@@ -108,7 +85,7 @@ export default function Login({ initialStep }: LoginProps) {
             text: 'continue_with',
             shape: 'rectangular',
             logo_alignment: 'left',
-            width: 360,
+            width: 380,
           });
           setGisReady(true);
         }
@@ -127,38 +104,7 @@ export default function Login({ initialStep }: LoginProps) {
     };
   }, [loginWithGoogleIdToken, navigate]);
 
-  // Password Strength calculation
-  const getPasswordStrength = (pass: string) => {
-    if (!pass) return { score: 0, label: '', color: 'bg-white/20' };
-    let score = 0;
-    if (pass.length >= 6) score += 1;
-    if (pass.length >= 10) score += 1;
-    if (/[0-9]/.test(pass) && /[a-zA-Z]/.test(pass)) score += 1;
-    if (/[^a-zA-Z0-9]/.test(pass)) score += 1;
-
-    if (score <= 1) return { score: 1, label: 'Weak', color: 'bg-amber-500' };
-    if (score === 2) return { score: 2, label: 'Fair', color: 'bg-blue-400' };
-    if (score === 3) return { score: 3, label: 'Good', color: 'bg-emerald-400' };
-    return { score: 4, label: 'Strong', color: 'bg-emerald-400' };
-  };
-
-  const passwordStrength = getPasswordStrength(password);
-
-  // Check if session already active
-  useEffect(() => {
-    if (!authLoading && authUser) {
-      navigate('/dashboard');
-    }
-  }, [authLoading, authUser, navigate]);
-
-  // Demo auto-fill convenience
-  const handleQuickDemoFill = () => {
-    setEmail('analyst@secora.internal');
-    setPassword('ReconSec2026!');
-    setError('');
-    setSuccess('Loaded demo analyst credentials.');
-  };
-
+  // Google Sign-In Trigger
   const handleGoogleSignIn = async () => {
     setGoogleLoading(true);
     setError('');
@@ -170,82 +116,26 @@ export default function Login({ initialStep }: LoginProps) {
       await signInWithGoogle();
       navigate('/dashboard');
     } catch (err: any) {
-      console.error("[Login] Google authentication failed:", err);
-      setError(err.message || "Failed to authenticate with Google.");
+      console.error('[Login] Google authentication failed:', err);
+      setError(err.message || 'Failed to authenticate with Google.');
     } finally {
       setGoogleLoading(false);
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  // GitHub Sign-In Trigger
+  const handleGithubSignIn = async () => {
+    setGithubLoading(true);
     setError('');
     setSuccess('');
-    setLoading(true);
-
     try {
-      if (step === 'login') {
-        const res = await api.login({ email, password });
-        if (res.authenticated) {
-          setUser({
-            uid: `local-${res.username}`,
-            email: email,
-            displayName: res.username,
-            photoURL: null,
-            username: res.username,
-            role: res.role || 'Analyst',
-          });
-        }
-        if (res.profile_completed === 0) {
-          setStep('profile');
-        } else {
-          navigate('/dashboard');
-        }
-      }
- else if (step === 'register') {
-        if (password.length < 6) {
-          throw new Error("Password must be at least 6 characters.");
-        }
-        if (confirmPassword && password !== confirmPassword) {
-          throw new Error("Passwords do not match. Please verify.");
-        }
-        await api.signup({ username: username.trim() || email.split('@')[0], email, password });
-        setStep('otp');
-        setSuccess("Registration initiated. Use verification code 123456.");
-      } else if (step === 'otp') {
-        await api.verifyOtp({ otp });
-        setStep('profile');
-        setSuccess("OTP verified! Complete your researcher persona.");
-      } else if (step === 'profile') {
-        if (!fullName.trim()) {
-          throw new Error("Full name is required.");
-        }
-        await api.completeProfile({
-          full_name: fullName,
-          purpose,
-          experience,
-          organization,
-        });
-        navigate('/dashboard');
-      } else if (step === 'forgot') {
-        if (!email.trim()) {
-          throw new Error("Please enter your registered email address.");
-        }
-        await api.forgotPassword({ email });
-        setStep('reset');
-        setSuccess("Password reset code dispatched! Enter code 123456.");
-      } else if (step === 'reset') {
-        if (password.length < 6) {
-          throw new Error("New password must be at least 6 characters.");
-        }
-        await api.resetPassword({ otp, new_password: password });
-        setStep('login');
-        setSuccess("Password updated successfully! Please sign in.");
-      }
+      await signInWithGithub();
+      navigate('/dashboard');
     } catch (err: any) {
-      setError(err.message || "An error occurred during authentication.");
+      console.error('[Login] GitHub authentication failed:', err);
+      setError(err.message || 'Failed to authenticate with GitHub.');
     } finally {
-      setLoading(false);
+      setGithubLoading(false);
     }
   };
 
@@ -312,7 +202,7 @@ export default function Login({ initialStep }: LoginProps) {
 
       </div>
 
-      {/* RIGHT COLUMN: Frosted Glass Form Panel matching reference layout */}
+      {/* RIGHT COLUMN: Dedicated SSO Authentication Panel */}
       <div className="relative w-full lg:w-1/2 min-h-screen flex flex-col justify-between p-6 sm:p-12 lg:p-16 overflow-y-auto">
         
         {/* Softly blurred background matching user reference */}
@@ -327,549 +217,141 @@ export default function Login({ initialStep }: LoginProps) {
         <div className="relative z-10 flex items-center justify-between mb-8">
           <Link 
             to="/" 
-            className="inline-flex items-center gap-2 text-xs font-mono text-white/60 hover:text-emerald-400 transition-colors"
+            className="inline-flex items-center gap-2 text-xs font-mono text-white/60 hover:text-emerald-400 transition-colors cursor-pointer group"
           >
-            <ArrowLeft className="h-3.5 w-3.5" />
+            <ArrowLeft className="h-3.5 w-3.5 transition-transform group-hover:-translate-x-1" />
             <span>BACK TO OVERVIEW</span>
           </Link>
 
-          {/* Mode Switcher */}
-          {(step === 'login' || step === 'register') && (
-            <div className="flex items-center bg-black/30 border border-white/10 rounded-full p-1 text-[11px] font-medium font-heading">
-              <button
-                type="button"
-                onClick={() => {
-                  setStep('login');
-                  setError('');
-                  setSuccess('');
-                }}
-                className={`px-3.5 py-1 rounded-full transition-all cursor-pointer ${
-                  step === 'login'
-                    ? 'bg-emerald-600 text-white shadow-sm'
-                    : 'text-white/60 hover:text-white'
-                }`}
-              >
-                Log in
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setStep('register');
-                  setError('');
-                  setSuccess('');
-                }}
-                className={`px-3.5 py-1 rounded-full transition-all cursor-pointer ${
-                  step === 'register'
-                    ? 'bg-emerald-600 text-white shadow-sm'
-                    : 'text-white/60 hover:text-white'
-                }`}
-              >
-                Register
-              </button>
-            </div>
-          )}
+          <div className="flex items-center gap-2 text-[10px] font-mono text-emerald-400/80 bg-emerald-950/40 border border-emerald-500/20 px-3 py-1 rounded-full">
+            <Shield className="h-3 w-3 text-emerald-400" />
+            <span>SSO FEDERATION</span>
+          </div>
         </div>
 
-        {/* Central Form Container */}
-        <div className="relative z-10 max-w-md w-full mx-auto my-auto py-6">
+        {/* Central Authentication Container */}
+        <div className="relative z-10 max-w-md w-full mx-auto my-auto py-8">
           
-          {/* Header Title & Subtext exactly matching reference */}
-          <div className="mb-8">
+          {/* Header Title & Subtext */}
+          <div className="mb-8 text-center sm:text-left">
+            <div className="inline-flex items-center gap-2 font-mono text-[10px] text-emerald-400 tracking-[0.2em] uppercase font-bold mb-3">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+              SECORA ACCESS CONTROL
+            </div>
             <h1 className="text-3xl sm:text-4xl font-heading font-semibold text-white tracking-tight">
-              {step === 'login' && 'Welcome back'}
-              {step === 'register' && 'Create an account'}
-              {step === 'forgot' && 'Reset password'}
-              {step === 'reset' && 'Set new password'}
-              {step === 'otp' && 'Verify identity'}
-              {step === 'profile' && 'Complete persona'}
+              Workstation Access
             </h1>
-            <p className="text-xs sm:text-sm text-white/60 mt-2 font-body">
-              {step === 'login' && 'Please enter your details.'}
-              {step === 'register' && 'Please fill in your credentials to join SECORA.'}
-              {step === 'forgot' && 'Enter your registered email to receive a recovery token.'}
-              {step === 'reset' && 'Configure a secure new password for your workstation.'}
-              {step === 'otp' && 'Input the 6-digit challenge code to confirm identity.'}
-              {step === 'profile' && 'Configure your analyst profile for reconnaissance logs.'}
+            <p className="text-xs sm:text-sm text-white/60 mt-2.5 font-body leading-relaxed">
+              Select an authorized identity provider to authenticate your researcher session and launch the reconnaissance console.
             </p>
           </div>
 
-          {/* Quick Demo Autofill Notice */}
-          {step === 'login' && (
-            <div className="mb-6 px-3.5 py-2.5 bg-black/40 border border-emerald-500/30 rounded-md flex items-center justify-between text-xs">
-              <span className="text-white/70 text-[11px] font-mono flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-                Demo Analyst Ready
-              </span>
-              <button
-                type="button"
-                onClick={handleQuickDemoFill}
-                className="text-emerald-400 hover:text-emerald-300 font-mono text-[10px] font-bold uppercase tracking-wider underline cursor-pointer"
-              >
-                [ Fill Credentials ]
-              </button>
-            </div>
-          )}
-
           {/* Alert Banners */}
           {error && (
-            <div className="mb-6 p-3 bg-red-950/60 border border-red-500/40 text-red-200 text-xs rounded-md flex items-start gap-2.5">
+            <div className="mb-6 p-3.5 bg-red-950/70 border border-red-500/40 text-red-200 text-xs rounded-md flex items-start gap-2.5 shadow-lg">
               <AlertCircle className="h-4 w-4 shrink-0 mt-0.5 text-red-400" />
               <span className="leading-relaxed">{error}</span>
             </div>
           )}
           {success && (
-            <div className="mb-6 p-3 bg-emerald-950/60 border border-emerald-500/40 text-emerald-200 text-xs rounded-md flex items-start gap-2.5">
+            <div className="mb-6 p-3.5 bg-emerald-950/70 border border-emerald-500/40 text-emerald-200 text-xs rounded-md flex items-start gap-2.5 shadow-lg">
               <CheckCircle2 className="h-4 w-4 shrink-0 mt-0.5 text-emerald-400" />
               <span className="leading-relaxed">{success}</span>
             </div>
           )}
 
-          {/* Core Form */}
-          <form onSubmit={handleSubmit} className="space-y-6">
+          {/* SSO Authentication Action Stack */}
+          <div className="space-y-4">
             
-            {/* 1. LOGIN FIELDS (Exact matching reference with clean underline inputs) */}
-            {step === 'login' && (
-              <>
-                <div className="space-y-1">
-                  <label className="text-xs font-medium text-white/90 block">
-                    E-mail
-                  </label>
-                  <input
-                    type="email"
-                    required
-                    value={email}
-                    onChange={e => setEmail(e.target.value)}
-                    placeholder="Enter your e-mail"
-                    className="w-full bg-transparent border-b border-white/20 focus:border-emerald-400 text-white placeholder-white/30 py-2.5 text-sm outline-none transition-colors"
-                  />
-                </div>
+            {/* 1. Google Identity Services / Custom Google SSO */}
+            <div className="w-full">
+              {/* GIS Native Button Target Container */}
+              <div
+                ref={googleBtnContainerRef}
+                className={`w-full flex justify-center min-h-[48px] transition-all overflow-hidden rounded-md ${gisReady ? 'block' : 'hidden'}`}
+              />
 
-                <div className="space-y-1">
-                  <label className="text-xs font-medium text-white/90 block">
-                    Password
-                  </label>
-                  <div className="relative">
-                    <input
-                      type={showPassword ? 'text' : 'password'}
-                      required
-                      value={password}
-                      onChange={e => setPassword(e.target.value)}
-                      placeholder="••••••••"
-                      className="w-full bg-transparent border-b border-white/20 focus:border-emerald-400 text-white placeholder-white/30 py-2.5 pr-10 text-sm outline-none transition-colors"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute inset-y-0 right-0 pr-1 flex items-center text-white/40 hover:text-white/80 cursor-pointer"
-                    >
-                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                    </button>
-                  </div>
-                </div>
-
-                {/* Remember Me & Forgot Password Row matching reference */}
-                <div className="flex items-center justify-between text-xs pt-1">
-                  <label className="flex items-center gap-2 cursor-pointer text-white/80 select-none">
-                    <input
-                      type="checkbox"
-                      checked={rememberMe}
-                      onChange={e => setRememberMe(e.target.checked)}
-                      className="w-4 h-4 rounded-xs border-white/30 bg-black/40 text-emerald-500 focus:ring-emerald-500 accent-emerald-500 cursor-pointer"
-                    />
-                    <span>Remember me</span>
-                  </label>
-                  
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setStep('forgot');
-                      setError('');
-                      setSuccess('');
-                    }}
-                    className="text-white/70 hover:text-emerald-400 transition-colors cursor-pointer"
-                  >
-                    Forgot your password?
-                  </button>
-                </div>
-
-                {/* Quick Demo Credentials Helper */}
-                <div className="flex items-center justify-between text-[11px] font-mono text-emerald-400/80 bg-emerald-950/40 border border-emerald-500/20 rounded px-3 py-2 mt-1">
-                  <span>Demo: <strong className="text-white font-semibold">admin@reconx.local</strong></span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setEmail('admin@reconx.local');
-                      setPassword('Admin@ReconX2026');
-                      setError('');
-                    }}
-                    className="text-emerald-400 hover:text-emerald-300 font-sans text-xs underline underline-offset-2 cursor-pointer transition-colors"
-                  >
-                    Auto-fill
-                  </button>
-                </div>
-              </>
-
-            )}
-
-            {/* 2. REGISTER FIELDS */}
-            {step === 'register' && (
-              <>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="space-y-1">
-                    <label className="text-xs font-medium text-white/90 block">
-                      Full Name
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      value={fullName}
-                      onChange={e => setFullName(e.target.value)}
-                      placeholder="Alex Mercer"
-                      className="w-full bg-transparent border-b border-white/20 focus:border-emerald-400 text-white placeholder-white/30 py-2.5 text-sm outline-none transition-colors"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-xs font-medium text-white/90 block">
-                      Username
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      value={username}
-                      onChange={e => setUsername(e.target.value)}
-                      placeholder="alex_sec"
-                      className="w-full bg-transparent border-b border-white/20 focus:border-emerald-400 text-white placeholder-white/30 py-2.5 text-sm outline-none transition-colors"
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-xs font-medium text-white/90 block">
-                    Work E-mail
-                  </label>
-                  <input
-                    type="email"
-                    required
-                    value={email}
-                    onChange={e => setEmail(e.target.value)}
-                    placeholder="Enter your work email"
-                    className="w-full bg-transparent border-b border-white/20 focus:border-emerald-400 text-white placeholder-white/30 py-2.5 text-sm outline-none transition-colors"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-xs font-medium text-white/90 block">
-                    Password
-                  </label>
-                  <div className="relative">
-                    <input
-                      type={showPassword ? 'text' : 'password'}
-                      required
-                      value={password}
-                      onChange={e => setPassword(e.target.value)}
-                      placeholder="Minimum 6 characters"
-                      className="w-full bg-transparent border-b border-white/20 focus:border-emerald-400 text-white placeholder-white/30 py-2.5 pr-10 text-sm outline-none transition-colors"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute inset-y-0 right-0 pr-1 flex items-center text-white/40 hover:text-white/80 cursor-pointer"
-                    >
-                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                    </button>
-                  </div>
-
-                  {/* Password Strength Indicator */}
-                  {password && (
-                    <div className="pt-2 space-y-1">
-                      <div className="flex items-center justify-between text-[10px] font-mono text-white/70">
-                        <span>Strength:</span>
-                        <span className="font-bold text-white">{passwordStrength.label}</span>
-                      </div>
-                      <div className="grid grid-cols-4 gap-1.5 h-1">
-                        {[1, 2, 3, 4].map(idx => (
-                          <div
-                            key={idx}
-                            className={`h-full rounded-full transition-colors ${
-                              idx <= passwordStrength.score ? passwordStrength.color : 'bg-white/10'
-                            }`}
-                          />
-                        ))}
-                      </div>
-                    </div>
+              {/* Custom Google Button Fallback */}
+              {!gisReady && (
+                <button
+                  type="button"
+                  onClick={handleGoogleSignIn}
+                  disabled={googleLoading || githubLoading}
+                  className="w-full flex items-center justify-center gap-3.5 bg-white/5 hover:bg-white/10 border border-white/15 hover:border-emerald-500/50 text-white py-3.5 px-4 rounded-md text-sm font-medium tracking-wide transition-all cursor-pointer disabled:opacity-50 group shadow-md"
+                >
+                  {googleLoading ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin text-emerald-400" />
+                      <span>Connecting to Google...</span>
+                    </>
+                  ) : (
+                    <>
+                      <svg className="h-4 w-4 shrink-0" viewBox="0 0 24 24">
+                        <path
+                          fill="#4285F4"
+                          d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                        />
+                        <path
+                          fill="#34A853"
+                          d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                        />
+                        <path
+                          fill="#FBBC05"
+                          d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
+                        />
+                        <path
+                          fill="#EA4335"
+                          d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
+                        />
+                      </svg>
+                      <span>Continue with Google</span>
+                    </>
                   )}
-                </div>
+                </button>
+              )}
+            </div>
 
-                <div className="space-y-1">
-                  <label className="text-xs font-medium text-white/90 block">
-                    Confirm Password
-                  </label>
-                  <input
-                    type={showPassword ? 'text' : 'password'}
-                    required
-                    value={confirmPassword}
-                    onChange={e => setConfirmPassword(e.target.value)}
-                    placeholder="Re-enter password"
-                    className="w-full bg-transparent border-b border-white/20 focus:border-emerald-400 text-white placeholder-white/30 py-2.5 text-sm outline-none transition-colors"
-                  />
-                </div>
-              </>
-            )}
-
-            {/* 3. FORGOT PASSWORD */}
-            {step === 'forgot' && (
-              <div className="space-y-4">
-                <div className="space-y-1">
-                  <label className="text-xs font-medium text-white/90 block">
-                    Registered E-mail
-                  </label>
-                  <input
-                    type="email"
-                    required
-                    value={email}
-                    onChange={e => setEmail(e.target.value)}
-                    placeholder="Enter your registered email"
-                    className="w-full bg-transparent border-b border-white/20 focus:border-emerald-400 text-white placeholder-white/30 py-2.5 text-sm outline-none transition-colors"
-                  />
-                </div>
-                <p className="text-xs text-white/60 leading-relaxed font-body">
-                  We will transmit a 6-digit recovery token. Default evaluation passcode is <span className="font-mono text-emerald-400 font-bold">123456</span>.
-                </p>
-              </div>
-            )}
-
-            {/* 4. RESET PASSWORD */}
-            {step === 'reset' && (
-              <div className="space-y-4">
-                <div className="space-y-1">
-                  <label className="text-xs font-medium text-white/90 block">
-                    6-Digit Reset Code
-                  </label>
-                  <input
-                    type="text"
-                    maxLength={6}
-                    required
-                    value={otp}
-                    onChange={e => setOtp(e.target.value)}
-                    placeholder="123456"
-                    className="w-full bg-transparent border-b border-white/20 focus:border-emerald-400 text-white text-center font-mono tracking-[0.3em] py-2.5 text-base outline-none transition-colors font-bold"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-medium text-white/90 block">
-                    New Password
-                  </label>
-                  <input
-                    type={showPassword ? 'text' : 'password'}
-                    required
-                    value={password}
-                    onChange={e => setPassword(e.target.value)}
-                    placeholder="Enter new password"
-                    className="w-full bg-transparent border-b border-white/20 focus:border-emerald-400 text-white placeholder-white/30 py-2.5 text-sm outline-none transition-colors"
-                  />
-                </div>
-              </div>
-            )}
-
-            {/* 5. OTP VERIFICATION */}
-            {step === 'otp' && (
-              <div className="space-y-4 text-center">
-                <label className="text-xs font-medium text-white/90 block">
-                  6-Digit Verification Token
-                </label>
-                <input
-                  type="text"
-                  maxLength={6}
-                  required
-                  value={otp}
-                  onChange={e => setOtp(e.target.value)}
-                  placeholder="123456"
-                  className="w-full bg-transparent border-b border-white/20 focus:border-emerald-400 text-white text-center font-mono tracking-[0.4em] py-2.5 text-2xl outline-none transition-colors font-bold"
-                />
-                <p className="font-mono text-[10px] text-white/50">
-                  Default test passcode: <span className="text-emerald-400 font-bold">123456</span>
-                </p>
-              </div>
-            )}
-
-            {/* 6. PROFILE CONFIGURATION */}
-            {step === 'profile' && (
-              <div className="space-y-4">
-                <div className="space-y-1">
-                  <label className="text-xs font-medium text-white/90 block">
-                    Research Objective
-                  </label>
-                  <select
-                    value={purpose}
-                    onChange={e => setPurpose(e.target.value)}
-                    className="w-full bg-black/40 border-b border-white/20 focus:border-emerald-400 text-white py-2.5 text-sm outline-none transition-colors"
-                  >
-                    <option value="Research">Security Research & Threat Analysis</option>
-                    <option value="Personal">Personal Infrastructure Auditing</option>
-                    <option value="Audits">Enterprise Compliance & Pentesting</option>
-                  </select>
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-xs font-medium text-white/90 block">
-                    Analyst Experience Level
-                  </label>
-                  <select
-                    value={experience}
-                    onChange={e => setExperience(e.target.value)}
-                    className="w-full bg-black/40 border-b border-white/20 focus:border-emerald-400 text-white py-2.5 text-sm outline-none transition-colors"
-                  >
-                    <option value="Beginner">Junior / Student Analyst</option>
-                    <option value="Intermediate">Security Engineer / Pentester</option>
-                    <option value="Expert">Senior Red Teamer / Architect</option>
-                  </select>
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-xs font-medium text-white/90 block">
-                    Organization / Laboratory
-                  </label>
-                  <input
-                    type="text"
-                    value={organization}
-                    onChange={e => setOrganization(e.target.value)}
-                    placeholder="Company, University, or Security Lab"
-                    className="w-full bg-transparent border-b border-white/20 focus:border-emerald-400 text-white placeholder-white/30 py-2.5 text-sm outline-none transition-colors"
-                  />
-                </div>
-              </div>
-            )}
-
-            {/* Main Action Button (Black/Dark Emerald with high-contrast text matching reference) */}
+            {/* 2. GitHub Single Sign-On Button */}
             <button
-              type="submit"
-              disabled={loading}
-              className="w-full bg-black hover:bg-[#002d28] border border-white/20 hover:border-emerald-400/50 text-white py-3.5 px-6 rounded-md font-medium text-sm tracking-wide transition-all duration-300 cursor-pointer shadow-lg shadow-black/40 disabled:opacity-50 mt-6"
+              type="button"
+              onClick={handleGithubSignIn}
+              disabled={googleLoading || githubLoading}
+              className="w-full flex items-center justify-center gap-3.5 bg-white/5 hover:bg-white/10 border border-white/15 hover:border-emerald-500/50 text-white py-3.5 px-4 rounded-md text-sm font-medium tracking-wide transition-all cursor-pointer disabled:opacity-50 group shadow-md"
             >
-              {loading ? "Processing..." :
-               step === 'login' ? "Log in" :
-               step === 'register' ? "Create account" :
-               step === 'forgot' ? "Send instructions" :
-               step === 'reset' ? "Update password" :
-               step === 'otp' ? "Verify code" : "Complete persona"}
+              {githubLoading ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin text-emerald-400" />
+                  <span>Connecting to GitHub...</span>
+                </>
+              ) : (
+                <>
+                  {/* GitHub Octocat Icon */}
+                  <svg className="h-4 w-4 shrink-0 fill-current text-white" viewBox="0 0 24 24">
+                    <path fillRule="evenodd" clipRule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" />
+                  </svg>
+                  <span>Continue with GitHub</span>
+                </>
+              )}
             </button>
 
-            {/* Google Single Sign-On / Google Identity Services */}
-            {(step === 'login' || step === 'register') && (
-              <>
-                <div className="flex items-center gap-3 pt-2">
-                  <div className="h-px flex-grow bg-white/10"></div>
-                  <span className="font-mono text-[9px] text-white/40 uppercase">OR</span>
-                  <div className="h-px flex-grow bg-white/10"></div>
-                </div>
+          </div>
 
-                {/* Google Identity Services Button Target */}
-                <div
-                  ref={googleBtnContainerRef}
-                  className={`w-full flex justify-center min-h-[44px] transition-all overflow-hidden ${gisReady ? 'block' : 'hidden'}`}
-                />
-
-                {/* Fallback & Custom Google Authentication Trigger */}
-                {!gisReady && (
-                  <button
-                    type="button"
-                    onClick={handleGoogleSignIn}
-                    disabled={loading || googleLoading}
-                    className="w-full flex items-center justify-center gap-3 bg-white/5 hover:bg-white/10 border border-white/10 text-white/90 py-3 px-4 rounded-md text-xs font-medium tracking-wide transition-colors cursor-pointer disabled:opacity-50 group hover:border-emerald-500/40"
-                  >
-                    {googleLoading ? (
-                      <>
-                        <Loader2 className="h-4 w-4 animate-spin text-emerald-400" />
-                        <span>Connecting to Google...</span>
-                      </>
-                    ) : (
-                      <>
-                        <svg className="h-4 w-4 shrink-0" viewBox="0 0 24 24">
-                          <path
-                            fill="#4285F4"
-                            d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                          />
-                          <path
-                            fill="#34A853"
-                            d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                          />
-                          <path
-                            fill="#FBBC05"
-                            d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
-                          />
-                          <path
-                            fill="#EA4335"
-                            d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
-                          />
-                        </svg>
-                        <span>Continue with Google</span>
-                      </>
-                    )}
-                  </button>
-                )}
-              </>
-            )}
-
-          </form>
-
-          {/* Switcher Footer matching reference */}
-          <div className="mt-8 text-center text-xs text-white/60 font-body">
-            {step === 'login' && (
-              <p>
-                Don't have an account?{' '}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setStep('register');
-                    setError('');
-                    setSuccess('');
-                  }}
-                  className="text-white hover:text-emerald-400 font-medium underline transition-colors cursor-pointer ml-1"
-                >
-                  Register here
-                </button>
-              </p>
-            )}
-            {step === 'register' && (
-              <p>
-                Already have an account?{' '}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setStep('login');
-                    setError('');
-                    setSuccess('');
-                  }}
-                  className="text-white hover:text-emerald-400 font-medium underline transition-colors cursor-pointer ml-1"
-                >
-                  Log in here
-                </button>
-              </p>
-            )}
-            {step === 'forgot' && (
-              <p>
-                Remember your credentials?{' '}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setStep('login');
-                    setError('');
-                    setSuccess('');
-                  }}
-                  className="text-white hover:text-emerald-400 font-medium underline transition-colors cursor-pointer ml-1"
-                >
-                  Back to Log in
-                </button>
-              </p>
-            )}
+          {/* Security & Cryptographic Standard Notice */}
+          <div className="mt-8 pt-6 border-t border-white/10 text-center">
+            <div className="inline-flex items-center gap-2 text-[10px] font-mono text-white/50 tracking-wider">
+              <Lock className="h-3 w-3 text-emerald-400/80" />
+              <span>ENTERPRISE OAUTH 2.0 & OIDC PROTOCOL</span>
+            </div>
+            <p className="text-[11px] text-white/40 mt-1.5 leading-relaxed font-body">
+              Zero passwords or credentials are stored locally. Session tokens are encrypted in accordance with OWASP security guidelines.
+            </p>
           </div>
 
         </div>
 
-        {/* Bottom Platform Metadata */}
-        <div className="relative z-10 pt-6 border-t border-white/10 flex items-center justify-between text-[9px] font-mono text-white/40">
-          <span>SECORA INTELLIGENCE</span>
-          <span>EST. 2024</span>
+        {/* Footer info */}
+        <div className="relative z-10 pt-4 flex flex-col sm:flex-row items-center justify-between text-[10px] font-mono text-white/40 gap-2 border-t border-white/5">
+          <span>SECORA INTELLIGENCE // WORKSTATION</span>
           <span>AUTHORIZED ANALYST ACCESS ONLY</span>
         </div>
 
