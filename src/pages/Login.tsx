@@ -60,7 +60,7 @@ export default function Login({ initialStep }: LoginProps) {
   const [experience, setExperience] = useState('Beginner');
 
   // Google Authentication State
-  const { user: authUser, loading: authLoading, signInWithGoogle, loginWithGoogleIdToken } = useAuth();
+  const { user: authUser, loading: authLoading, signInWithGoogle, loginWithGoogleIdToken, setUser } = useAuth();
   const [googleLoading, setGoogleLoading] = useState(false);
   const [gisReady, setGisReady] = useState(false);
   const googleBtnContainerRef = useRef<HTMLDivElement>(null);
@@ -186,12 +186,23 @@ export default function Login({ initialStep }: LoginProps) {
     try {
       if (step === 'login') {
         const res = await api.login({ email, password });
+        if (res.authenticated) {
+          setUser({
+            uid: `local-${res.username}`,
+            email: email,
+            displayName: res.username,
+            photoURL: null,
+            username: res.username,
+            role: res.role || 'Analyst',
+          });
+        }
         if (res.profile_completed === 0) {
           setStep('profile');
         } else {
           navigate('/dashboard');
         }
-      } else if (step === 'register') {
+      }
+ else if (step === 'register') {
         if (password.length < 6) {
           throw new Error("Password must be at least 6 characters.");
         }
@@ -480,7 +491,24 @@ export default function Login({ initialStep }: LoginProps) {
                     Forgot your password?
                   </button>
                 </div>
+
+                {/* Quick Demo Credentials Helper */}
+                <div className="flex items-center justify-between text-[11px] font-mono text-emerald-400/80 bg-emerald-950/40 border border-emerald-500/20 rounded px-3 py-2 mt-1">
+                  <span>Demo: <strong className="text-white font-semibold">admin@reconx.local</strong></span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEmail('admin@reconx.local');
+                      setPassword('Admin@ReconX2026');
+                      setError('');
+                    }}
+                    className="text-emerald-400 hover:text-emerald-300 font-sans text-xs underline underline-offset-2 cursor-pointer transition-colors"
+                  >
+                    Auto-fill
+                  </button>
+                </div>
               </>
+
             )}
 
             {/* 2. REGISTER FIELDS */}

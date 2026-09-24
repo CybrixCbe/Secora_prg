@@ -734,19 +734,25 @@ app.post('/api/login', (req, res) => {
     }
   }
 
-  if (user && (user.password === password || password === 'Admin@ReconX2026' || user.email === 'admin@reconx.local')) {
-    setSessionCookie(res, user);
-    logActivity(user.id, 'User Login', `Logged in from IP: ${req.ip}`, req.ip);
-    return res.json({
-      authenticated: true,
-      username: user.username,
-      role: user.role,
-      profile_completed: user.profile_completed,
-    });
+  if (user) {
+    if (user.password === password || password === 'Admin@ReconX2026' || user.email === 'admin@reconx.local') {
+      setSessionCookie(res, user);
+      logActivity(user.id, 'User Login', `Logged in from IP: ${req.ip}`, req.ip);
+      return res.json({
+        authenticated: true,
+        username: user.username,
+        role: user.role,
+        profile_completed: user.profile_completed,
+      });
+    }
+    return res.status(401).json({ error: 'Incorrect password. Please verify and try again.' });
   }
 
-  return res.status(401).json({ error: 'Invalid email or password.' });
+  return res.status(401).json({
+    error: 'Account not found. Please click "Register" below to create an account, or sign in with Google.',
+  });
 });
+
 
 app.post('/api/signup', (req, res) => {
   const { username, email, password } = req.body || {};

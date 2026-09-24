@@ -17,8 +17,9 @@ async function request(url: string, options: RequestInit = {}) {
   const response = await fetch(url, config);
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.message || `Request failed with status ${response.status}`);
+    throw new Error(errorData.error || errorData.message || `Request failed with status ${response.status}`);
   }
+
   return response.json();
 }
 
