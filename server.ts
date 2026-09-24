@@ -14,6 +14,13 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Load .env variables natively if available
+if (typeof process.loadEnvFile === 'function') {
+  try {
+    process.loadEnvFile();
+  } catch {}
+}
+
 const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3001;
 const HOST = '0.0.0.0';
@@ -806,7 +813,7 @@ function calculateRisk(dnsMod: any, sslMod: any, headersMod: any, portMod: any) 
 // 1. Auth & Session Routes
 app.get('/api/auth/config', (req, res) => {
   res.json({
-    google_client_id: process.env.GOOGLE_CLIENT_ID || '',
+    google_client_id: process.env.GOOGLE_CLIENT_ID || process.env.VITE_GOOGLE_CLIENT_ID || '',
   });
 });
 
