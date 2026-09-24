@@ -8,6 +8,7 @@ import net from 'net';
 import tls from 'tls';
 import http from 'http';
 import https from 'https';
+import { execFile } from 'child_process';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -208,11 +209,17 @@ const sampleResults1 = {
     },
     portscan: {
       status: 'success',
+      engine: 'Nmap v7.98 (SYN Stealth)',
       ports: [
-        { port: 80, service: 'HTTP', state: 'OPEN', banner: 'cloudflare' },
-        { port: 443, service: 'HTTPS', state: 'OPEN', banner: 'cloudflare TLS' },
+        { port: 80, service: 'HTTP', state: 'OPEN', banner: 'Cloudflare Edge Gateway' },
+        { port: 443, service: 'HTTPS', state: 'OPEN', banner: 'Cloudflare TLS/SSL Listener' },
         { port: 8080, service: 'HTTP-Proxy', state: 'FILTERED', banner: 'Cloudflare Edge Filter' },
-        { port: 8443, service: 'HTTPS-Alt', state: 'OPEN', banner: 'Cloudflare CDN' },
+        { port: 8443, service: 'HTTPS-Alt', state: 'OPEN', banner: 'Cloudflare CDN Alternate' },
+      ],
+      open_ports: [
+        { port: 80, service: 'HTTP', state: 'OPEN', banner: 'Cloudflare Edge Gateway' },
+        { port: 443, service: 'HTTPS', state: 'OPEN', banner: 'Cloudflare TLS/SSL Listener' },
+        { port: 8443, service: 'HTTPS-Alt', state: 'OPEN', banner: 'Cloudflare CDN Alternate' },
       ],
     },
     tech: {
@@ -414,52 +421,195 @@ async function inspectSsl(target: string): Promise<any> {
   });
 }
 
-async function probePort(host: string, port: number, timeout = 1200): Promise<{ port: number; service: string; state: string; banner: string }> {
-  const serviceMap: Record<number, string> = {
-    21: 'FTP',
-    22: 'SSH',
-    25: 'SMTP',
-    53: 'DNS',
-    80: 'HTTP',
-    110: 'POP3',
-    143: 'IMAP',
-    443: 'HTTPS',
-    3306: 'MySQL',
-    3389: 'RDP',
-    5432: 'PostgreSQL',
-    8080: 'HTTP-Alt',
-    8443: 'HTTPS-Alt',
-  };
+export interface PortScanResult {
+  port: number;
+  service: string;
+  state: 'OPEN' | 'CLOSED' | 'FILTERED';
+  banner: string;
+}
 
-  const service = serviceMap[port] || `TCP/${port}`;
+const COMMON_PORTS = [21, 22, 25, 53, 80, 110, 143, 443, 3306, 3389, 5432, 8080, 8443];
+
+const PORT_SERVICE_MAP: Record<number, string> = {
+  21: 'FTP',
+  22: 'SSH',
+  25: 'SMTP',
+  53: 'DNS',
+  80: 'HTTP',
+  110: 'POP3',
+  143: 'IMAP',
+  443: 'HTTPS',
+  3306: 'MySQL',
+  3389: 'RDP',
+  5432: 'PostgreSQL',
+  8080: 'HTTP-Alt',
+  8443: 'HTTPS-Alt',
+};
+
+function resolveNmapBinary(): string {
+  const win32Path = 'C:\\Program Files (x86)\\Nmap\\nmap.exe';
+  const win64Path = 'C:\\Program Files\\Nmap\\nmap.exe';
+  if (fs.existsSync(win32Path)) return win32Path;
+  if (fs.existsSync(win64Path)) return win64Path;
+  return 'nmap';
+}
+
+function parseNmapXml(xml: string, requestedPorts: number[]): PortScanResult[] {
+  const portBlocks = xml.match(/<port\b[^>]*>[\s\S]*?<\/port>/g) || [];
+  const resultsMap = new Map<number, PortScanResult>();
+
+  for (const block of portBlocks) {
+    const portMatch = block.match(/portid="(\d+)"/);
+    const stateMatch = block.match(/<state\s+state="([^"]+)"/);
+    const serviceMatch = block.match(/<service\s+name="([^"]+)"/);
+    const productMatch = block.match(/product="([^"]+)"/);
+    const versionMatch = block.match(/version="([^"]+)"/);
+
+    if (!portMatch) continue;
+    const port = parseInt(portMatch[1], 10);
+    const rawState = (stateMatch ? stateMatch[1] : 'filtered').toUpperCase();
+    const state: 'OPEN' | 'CLOSED' | 'FILTERED' =
+      rawState === 'OPEN' ? 'OPEN' : rawState === 'CLOSED' ? 'CLOSED' : 'FILTERED';
+
+    const serviceName = serviceMatch ? serviceMatch[1] : '';
+    const service = serviceName ? serviceName.toUpperCase() : (PORT_SERVICE_MAP[port] || `TCP/${port}`);
+
+    let banner = service;
+    if (productMatch) {
+      banner += ` ${productMatch[1]}`;
+      if (versionMatch) banner += ` ${versionMatch[1]}`;
+    } else {
+      banner += ` Active Service (${state})`;
+    }
+
+    resultsMap.set(port, {
+      port,
+      service,
+      state,
+      banner,
+    });
+  }
+
+  return requestedPorts.map(p => {
+    return (
+      resultsMap.get(p) || {
+        port: p,
+        service: PORT_SERVICE_MAP[p] || `TCP/${p}`,
+        state: 'FILTERED',
+        banner: 'Filtered / No response',
+      }
+    );
+  });
+}
+
+async function runNmapScan(target: string, ports: number[] = COMMON_PORTS): Promise<{ engine: string; ports: PortScanResult[] } | null> {
+  const safeTarget = target.replace(/[^a-zA-Z0-9.-]/g, '');
+  if (!safeTarget) return null;
+
+  const nmapBinary = resolveNmapBinary();
+  const portsArg = ports.join(',');
+  const args = ['-Pn', '-T4', '-p', portsArg, '-oX', '-', safeTarget];
 
   return new Promise(resolve => {
+    execFile(nmapBinary, args, { timeout: 14000 }, (error, stdout, stderr) => {
+      if (error || !stdout || !stdout.includes('<nmaprun')) {
+        console.warn(`[PortScan] Native Nmap execution bypassed: ${error?.message || stderr || 'No XML output'}`);
+        resolve(null);
+        return;
+      }
+      try {
+        const parsed = parseNmapXml(stdout, ports);
+        if (parsed.length > 0) {
+          resolve({
+            engine: 'Nmap v7.98 (SYN / TCP Connect Sweep)',
+            ports: parsed,
+          });
+        } else {
+          resolve(null);
+        }
+      } catch (e) {
+        console.warn('[PortScan] Error parsing Nmap XML:', e);
+        resolve(null);
+      }
+    });
+  });
+}
+
+async function probePort(host: string, port: number, timeout = 1500): Promise<PortScanResult> {
+  const service = PORT_SERVICE_MAP[port] || `TCP/${port}`;
+
+  return new Promise(resolve => {
+    let resolved = false;
     const socket = new net.Socket();
     let banner = '';
+
+    const finish = (state: 'OPEN' | 'CLOSED' | 'FILTERED', bannerText: string) => {
+      if (resolved) return;
+      resolved = true;
+      socket.destroy();
+      resolve({ port, service, state, banner: bannerText });
+    };
 
     socket.setTimeout(timeout);
 
     socket.on('connect', () => {
-      socket.write('HEAD / HTTP/1.0\r\n\r\n');
+      try {
+        if (port === 80 || port === 8080 || port === 8443) {
+          socket.write(`HEAD / HTTP/1.0\r\nHost: ${host}\r\nUser-Agent: Secora-Scanner/1.0\r\n\r\n`);
+        } else {
+          socket.write('\r\n');
+        }
+      } catch (_) {}
+
       setTimeout(() => {
-        socket.destroy();
-        resolve({ port, service, state: 'OPEN', banner: banner || `${service} Active Service` });
-      }, 250);
+        finish('OPEN', banner || `${service} Active Service`);
+      }, 150);
     });
 
     socket.on('data', chunk => {
-      banner += chunk.toString('utf-8').split('\n')[0].replace(/[\r\n]/g, '').substring(0, 60);
+      const line = chunk.toString('utf-8').split('\n')[0].replace(/[\r\n]/g, '').trim();
+      if (line) {
+        banner += line.substring(0, 60);
+      }
     });
 
     socket.on('timeout', () => {
-      socket.destroy();
-      resolve({ port, service, state: 'FILTERED', banner: 'No response (filtered/firewalled)' });
+      finish('FILTERED', 'No response (filtered/firewalled)');
     });
 
     socket.on('error', () => {
-      resolve({ port, service, state: 'CLOSED', banner: 'Connection rejected' });
+      finish('CLOSED', 'Connection rejected / closed');
     });
+
+    try {
+      socket.connect(port, host);
+    } catch (e) {
+      finish('CLOSED', 'Connection refused');
+    }
   });
+}
+
+async function executePortSweep(target: string, ports: number[] = COMMON_PORTS): Promise<{ engine: string; ports: PortScanResult[]; open_ports: PortScanResult[] }> {
+  // 1. Try real Native Nmap first
+  const nmapResult = await runNmapScan(target, ports);
+  if (nmapResult && nmapResult.ports.length > 0) {
+    const openPorts = nmapResult.ports.filter(p => p.state === 'OPEN');
+    return {
+      engine: nmapResult.engine,
+      ports: nmapResult.ports,
+      open_ports: openPorts,
+    };
+  }
+
+  // 2. Fallback to parallel Node.js Socket probing
+  console.log(`[PortScan] Running fallback Native TCP Sockets for target: ${target}`);
+  const socketResults = await Promise.all(ports.map(p => probePort(target, p)));
+  const openPorts = socketResults.filter(p => p.state === 'OPEN');
+  return {
+    engine: 'Native TCP Socket Prober',
+    ports: socketResults,
+    open_ports: openPorts,
+  };
 }
 
 async function checkHttpHeaders(target: string): Promise<any> {
@@ -614,8 +764,10 @@ function calculateRisk(dnsMod: any, sslMod: any, headersMod: any, portMod: any) 
   }
 
   // 3. Open Ports Check
-  if (portMod && portMod.status === 'success' && Array.isArray(portMod.ports)) {
-    const openPorts = portMod.ports.filter((p: any) => p.state === 'OPEN');
+  if (portMod && portMod.status === 'success' && (Array.isArray(portMod.ports) || Array.isArray(portMod.open_ports))) {
+    const openPorts = (portMod.open_ports || portMod.ports || []).filter(
+      (p: any) => String(p.state || '').toUpperCase() === 'OPEN'
+    );
     const sensitivePorts = [21, 22, 25, 3306, 3389, 5432];
     for (const p of openPorts) {
       if (sensitivePorts.includes(p.port)) {
@@ -1212,18 +1364,27 @@ app.get('/scan/stream', async (req, res) => {
       sendEvent({ percent: currentPercent, log: '[!] Scan cancelled by operator.', status: 'cancelled' });
       return res.end();
     }
-    sendEvent({ percent: currentPercent, log: '[i] Probing common perimeter TCP services (21, 22, 80, 443, 8080, 8443)...', status: 'info' });
+    sendEvent({
+      percent: currentPercent,
+      log: `[i] Probing perimeter TCP services via Nmap engine (${COMMON_PORTS.join(', ')})...`,
+      status: 'info',
+    });
 
-    const portsToProbe = [80, 443, 22, 8080, 8443];
-    const portResults = await Promise.all(portsToProbe.map(p => probePort(cleanTarget, p)));
+    const sweepResult = await executePortSweep(cleanTarget, COMMON_PORTS);
 
     scanResults.modules.portscan = {
       status: 'success',
-      ports: portResults,
+      engine: sweepResult.engine,
+      ports: sweepResult.ports,
+      open_ports: sweepResult.open_ports,
     };
 
     currentPercent += increment;
-    sendEvent({ percent: currentPercent, log: '[+] Port sweep finalized.', status: 'success' });
+    sendEvent({
+      percent: currentPercent,
+      log: `[+] Port sweep completed via ${sweepResult.engine}. Discovered ${sweepResult.open_ports.length} open TCP ports.`,
+      status: 'success',
+    });
   }
 
   // Final Assessment & Database Commit
@@ -1455,6 +1616,20 @@ app.get('/scan/export/:format/:scanId', (req, res) => {
     for (const rec of results?.risk_assessment?.recommendations || []) {
       content += `1. ${rec}\n`;
     }
+
+    if (results?.modules?.portscan?.ports?.length) {
+      const openPorts = results.modules.portscan.ports.filter((p: any) => String(p.state).toUpperCase() === 'OPEN');
+      content += `\n## Discovered Open Ports (${results.modules.portscan.engine || 'Nmap'})\n\n`;
+      if (openPorts.length > 0) {
+        content += `| Port | Service | Status | Banner |\n|---|---|---|---|\n`;
+        for (const p of openPorts) {
+          content += `| ${p.port} | ${p.service} | ${p.state} | ${p.banner} |\n`;
+        }
+      } else {
+        content += `*No exposed listening ports discovered on tested perimeter services.*\n`;
+      }
+    }
+
     res.setHeader('Content-Type', 'text/markdown');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     return res.send(content);
@@ -1487,6 +1662,30 @@ app.get('/scan/export/:format/:scanId', (req, res) => {
     <h2>Executive Findings</h2>
     <ul>${(results?.risk_assessment?.reasons || []).map((r: string) => `<li>${r}</li>`).join('')}</ul>
   </div>
+  ${results?.modules?.portscan?.ports?.length ? `
+  <div class="card">
+    <h2>Discovered Open Ports (${results.modules.portscan.engine || 'Nmap Sweep'})</h2>
+    <table style="width:100%; border-collapse:collapse; margin-top:12px; font-size:13px;">
+      <thead>
+        <tr style="text-align:left; border-bottom:1px solid #1e293b; color:#94a3b8;">
+          <th style="padding:8px;">Port</th>
+          <th style="padding:8px;">Service</th>
+          <th style="padding:8px;">State</th>
+          <th style="padding:8px;">Banner / Identification</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${results.modules.portscan.ports.filter((p: any) => String(p.state).toUpperCase() === 'OPEN').map((p: any) => `
+          <tr style="border-bottom:1px solid #1e293b;">
+            <td style="padding:8px; font-weight:bold; color:#00d2b4;">${p.port}</td>
+            <td style="padding:8px;">${p.service}</td>
+            <td style="padding:8px; color:#10b981; font-weight:bold;">${p.state}</td>
+            <td style="padding:8px; font-family:monospace; color:#94a3b8;">${p.banner}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  </div>` : ''}
   <div class="card">
     <h2>Mitigation Recommendations</h2>
     <ol>${(results?.risk_assessment?.recommendations || []).map((r: string) => `<li>${r}</li>`).join('')}</ol>

@@ -13,6 +13,7 @@ export default function ScanDetail() {
   const [activeTab, setActiveTab] = useState<TabType>('overview');
   const [displayScore, setDisplayScore] = useState(0);
   const [copiedField, setCopiedField] = useState<string | null>(null);
+  const [portFilter, setPortFilter] = useState<'open' | 'all' | 'filtered' | 'closed'>('open');
 
   const navigate = useNavigate();
 
@@ -555,9 +556,17 @@ export default function ScanDetail() {
             {/* 8. Open Ports Tab */}
             {activeTab === 'portscan' && (
               <div className="space-y-6">
-                <div className="border-b border-border pb-4">
-                  <h3 className="font-heading font-black text-sm text-text-primary uppercase tracking-wider">Open TCP Port Sweeps</h3>
-                  <p className="text-[11px] text-text-secondary">Common ports status metrics.</p>
+                <div className="border-b border-border pb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                  <div>
+                    <h3 className="font-heading font-black text-sm text-text-primary uppercase tracking-wider">Perimeter TCP Port Sweep</h3>
+                    <p className="text-[11px] text-text-secondary">Network listeners, port states, and service banner identification.</p>
+                  </div>
+                  {modules.portscan?.engine && (
+                    <div className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-primary/10 border border-primary/20 text-primary text-[10px] font-mono font-bold rounded-sm uppercase tracking-wider self-start sm:self-auto">
+                      <Server className="h-3 w-3" />
+                      <span>{modules.portscan.engine}</span>
+                    </div>
+                  )}
                 </div>
 
                 {!modules.portscan ? (
@@ -570,51 +579,130 @@ export default function ScanDetail() {
                     <p className="text-xs text-amber-600 leading-relaxed">{modules.portscan.error_msg || 'Could not reach target for port scanning.'}</p>
                   </div>
                 ) : (() => {
-                  // Support both 'ports' and 'open_ports' field names
-                  const allPorts = modules.portscan.open_ports || modules.portscan.ports || [];
-                  const openPorts = allPorts.filter((p: any) => p.state === 'open' || !p.state);
+                  const allPorts: any[] = modules.portscan.ports || modules.portscan.open_ports || [];
+                  const openPorts = allPorts.filter((p: any) => String(p.state || '').toLowerCase() === 'open' || !p.state);
+                  const filteredPorts = allPorts.filter((p: any) => String(p.state || '').toLowerCase() === 'filtered');
+                  const closedPorts = allPorts.filter((p: any) => String(p.state || '').toLowerCase() === 'closed');
+
+                  const displayedPorts = 
+                    portFilter === 'open' ? openPorts :
+                    portFilter === 'filtered' ? filteredPorts :
+                    portFilter === 'closed' ? closedPorts :
+                    allPorts;
+
                   return (
-                    <div className="card overflow-hidden bg-surface border border-border rounded-md">
-                      {openPorts.length === 0 ? (
-                        <div className="p-8 text-center text-xs text-text-secondary uppercase">
-                          No open TCP ports discovered during diagnostic scan.
-                        </div>
-                      ) : (
-                        <table className="w-full text-xs text-left">
-                          <thead className="bg-surface-muted font-heading uppercase text-[10px] tracking-wider border-b border-border">
-                            <tr>
-                              <th className="p-3">Port</th>
-                              <th className="p-3">Service</th>
-                              <th className="p-3">Status</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-border font-mono text-text-secondary">
-                            {openPorts.map((p: any) => (
-                              <tr key={p.port} className="hover:bg-surface-container-low transition-colors">
-                                <td className="p-3 font-bold text-text-primary">
-                                  <div className="flex items-center gap-2">
-                                    <span className="tabular-nums">{p.port}</span>
-                                    <button
-                                      onClick={() => handleCopy(String(p.port), `port-${p.port}`)}
-                                      title="Copy port"
-                                      className="p-1 hover:text-secondary text-text-secondary/60 transition-colors"
-                                    >
-                                      {copiedField === `port-${p.port}` ? <Check className="h-3 w-3 text-emerald-600" /> : <Copy className="h-3 w-3" />}
-                                    </button>
-                                  </div>
-                                </td>
-                                <td className="p-3 font-medium text-text-primary">{p.service || 'unknown'}</td>
-                                <td className="p-3">
-                                  <span className="inline-flex items-center gap-1.5 px-2 py-0.5 text-[9px] bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-sm font-bold uppercase">
-                                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 threat-pulse"></span>
-                                    <span>Open</span>
-                                  </span>
-                                </td>
+                    <div className="space-y-4">
+                      {/* Filter Controls */}
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setPortFilter('open')}
+                          className={`px-3 py-1.5 text-xs font-mono font-bold uppercase transition-colors rounded-sm border ${
+                            portFilter === 'open'
+                              ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/30'
+                              : 'bg-surface border-border text-text-secondary hover:text-text-primary'
+                          }`}
+                        >
+                          Open ({openPorts.length})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setPortFilter('all')}
+                          className={`px-3 py-1.5 text-xs font-mono font-bold uppercase transition-colors rounded-sm border ${
+                            portFilter === 'all'
+                              ? 'bg-primary/10 text-primary border-primary/30'
+                              : 'bg-surface border-border text-text-secondary hover:text-text-primary'
+                          }`}
+                        >
+                          All Scanned ({allPorts.length})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setPortFilter('filtered')}
+                          className={`px-3 py-1.5 text-xs font-mono font-bold uppercase transition-colors rounded-sm border ${
+                            portFilter === 'filtered'
+                              ? 'bg-amber-500/10 text-amber-500 border-amber-500/30'
+                              : 'bg-surface border-border text-text-secondary hover:text-text-primary'
+                          }`}
+                        >
+                          Filtered ({filteredPorts.length})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setPortFilter('closed')}
+                          className={`px-3 py-1.5 text-xs font-mono font-bold uppercase transition-colors rounded-sm border ${
+                            portFilter === 'closed'
+                              ? 'bg-zinc-500/10 text-zinc-400 border-zinc-500/30'
+                              : 'bg-surface border-border text-text-secondary hover:text-text-primary'
+                          }`}
+                        >
+                          Closed ({closedPorts.length})
+                        </button>
+                      </div>
+
+                      <div className="card overflow-hidden bg-surface border border-border rounded-md">
+                        {displayedPorts.length === 0 ? (
+                          <div className="p-8 text-center text-xs text-text-secondary uppercase">
+                            {portFilter === 'open'
+                              ? 'No open TCP ports discovered among scanned perimeter services.'
+                              : `No ports with state "${portFilter}" discovered.`}
+                          </div>
+                        ) : (
+                          <table className="w-full text-xs text-left">
+                            <thead className="bg-surface-muted font-heading uppercase text-[10px] tracking-wider border-b border-border">
+                              <tr>
+                                <th className="p-3">Port</th>
+                                <th className="p-3">Service</th>
+                                <th className="p-3">Banner / Identification</th>
+                                <th className="p-3">State</th>
                               </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      )}
+                            </thead>
+                            <tbody className="divide-y divide-border font-mono text-text-secondary">
+                              {displayedPorts.map((p: any) => {
+                                const stateLower = String(p.state || 'open').toLowerCase();
+                                const isOpen = stateLower === 'open';
+                                const isFiltered = stateLower === 'filtered';
+                                return (
+                                  <tr key={p.port} className="hover:bg-surface-container-low transition-colors">
+                                    <td className="p-3 font-bold text-text-primary">
+                                      <div className="flex items-center gap-2">
+                                        <span className="tabular-nums">{p.port}</span>
+                                        <button
+                                          onClick={() => handleCopy(String(p.port), `port-${p.port}`)}
+                                          title="Copy port"
+                                          className="p-1 hover:text-secondary text-text-secondary/60 transition-colors"
+                                        >
+                                          {copiedField === `port-${p.port}` ? <Check className="h-3 w-3 text-emerald-600" /> : <Copy className="h-3 w-3" />}
+                                        </button>
+                                      </div>
+                                    </td>
+                                    <td className="p-3 font-medium text-text-primary">{p.service || 'unknown'}</td>
+                                    <td className="p-3 text-[11px] text-text-secondary truncate max-w-[280px]">
+                                      {p.banner || `${p.service || 'TCP'} Service`}
+                                    </td>
+                                    <td className="p-3">
+                                      {isOpen ? (
+                                        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 text-[9px] bg-emerald-500/10 border border-emerald-500/30 text-emerald-500 rounded-sm font-bold uppercase">
+                                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 threat-pulse"></span>
+                                          <span>Open</span>
+                                        </span>
+                                      ) : isFiltered ? (
+                                        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 text-[9px] bg-amber-500/10 border border-amber-500/30 text-amber-500 rounded-sm font-bold uppercase">
+                                          <span>Filtered</span>
+                                        </span>
+                                      ) : (
+                                        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 text-[9px] bg-zinc-500/10 border border-zinc-500/30 text-zinc-400 rounded-sm font-bold uppercase">
+                                          <span>Closed</span>
+                                        </span>
+                                      )}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        )}
+                      </div>
                     </div>
                   );
                 })()}
