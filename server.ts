@@ -14,7 +14,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
+const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3001;
 const HOST = '0.0.0.0';
 
 app.use(express.json({ limit: '10mb' }));
@@ -1507,9 +1507,18 @@ async function startServer() {
       appType: 'spa',
     });
     app.use(vite.middlewares);
-    app.get('/', (_req, res) => {
-      res.redirect('/Secora_prg/');
+    app.get('*', (req, res, next) => {
+      if (
+        !req.path.startsWith('/Secora_prg') &&
+        !req.path.startsWith('/api') &&
+        !req.path.startsWith('/scan') &&
+        !req.path.startsWith('/settings')
+      ) {
+        return res.redirect(`/Secora_prg${req.url}`);
+      }
+      next();
     });
+
   } else {
     const distPath = path.resolve(__dirname, 'dist');
     if (fs.existsSync(distPath)) {
@@ -1527,10 +1536,26 @@ async function startServer() {
     }
   }
 
-  app.listen(PORT, HOST, () => {
-    console.log(`[SECORA] Workstation running on http://${HOST}:${PORT}`);
-  });
+  const tryListen = (portToTry: number) => {
+    const server = app.listen(portToTry, HOST, () => {
+      console.log(`[SECORA] Workstation running on http://localhost:${portToTry}/Secora_prg/`);
+      console.log(`[SECORA] Root accessible at http://localhost:${portToTry}/`);
+    });
+
+    server.on('error', (err: any) => {
+      if (err.code === 'EADDRINUSE' && !process.env.PORT) {
+        console.warn(`[SECORA] Port ${portToTry} is in use, trying port ${portToTry + 1}...`);
+        tryListen(portToTry + 1);
+      } else {
+        console.error('[SECORA] Server error:', err);
+        process.exit(1);
+      }
+    });
+  };
+
+  tryListen(PORT);
 }
+
 
 startServer().catch(err => {
   console.error('[SECORA] Server boot error:', err);
