@@ -253,11 +253,32 @@ const sampleResults1 = {
     },
     tech: {
       status: 'success',
+      server: 'Cloudflare Edge Web Server',
+      web_server: 'Cloudflare Edge Web Server',
+      cms: 'None Detected',
+      backend: 'V8 / Rust Edge Runtime',
+      js_frameworks: ['React', 'Next.js', 'Tailwind CSS'],
+      frameworks: ['React', 'Next.js', 'Tailwind CSS'],
+      cdn: 'Cloudflare Anycast Global CDN',
+      waf: 'Cloudflare WAF & Threat Intelligence',
+      analytics: ['Cloudflare Web Analytics'],
+      summary: {
+        stack_classification: 'Cloud-Native JAMstack (Next.js / Edge)',
+        waf_active: true,
+        cdn_active: true,
+        frameworks_count: 3,
+      },
       detected: {
-        server: 'Cloudflare Edge Server',
-        waf_cdn: ['Cloudflare WAF', 'Cloudflare CDN Anycast'],
-        js_frameworks: ['React', 'Next.js'],
-        cms: [],
+        server: 'Cloudflare Edge Web Server',
+        web_server: 'Cloudflare Edge Web Server',
+        cms: 'None Detected',
+        backend: 'V8 / Rust Edge Runtime',
+        waf_cdn: ['Cloudflare WAF & Threat Intelligence', 'Cloudflare Anycast Global CDN'],
+        js_frameworks: ['React', 'Next.js', 'Tailwind CSS'],
+        frameworks: ['React', 'Next.js', 'Tailwind CSS'],
+        cdn: 'Cloudflare Anycast Global CDN',
+        waf: 'Cloudflare WAF & Threat Intelligence',
+        analytics: ['Cloudflare Web Analytics'],
       },
     },
   },
@@ -645,7 +666,7 @@ async function checkHttpHeaders(target: string): Promise<any> {
   const tryFetch = async (protocol: 'https' | 'http') => {
     const url = `${protocol}://${target}`;
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000);
+    const timeoutId = setTimeout(() => controller.abort(), 6000);
 
     try {
       const response = await fetch(url, {
@@ -664,7 +685,22 @@ async function checkHttpHeaders(target: string): Promise<any> {
         normalizedHeaders[key.toLowerCase()] = val;
       });
 
-      return { ok: true, headers: normalizedHeaders, status: response.status, url };
+      let cookies: string[] = [];
+      try {
+        if (typeof (response.headers as any).getSetCookie === 'function') {
+          cookies = (response.headers as any).getSetCookie();
+        } else if (response.headers.get('set-cookie')) {
+          cookies = [response.headers.get('set-cookie')!];
+        }
+      } catch (_) {}
+
+      let bodyText = '';
+      try {
+        const fullText = await response.text();
+        bodyText = fullText.substring(0, 300000);
+      } catch (_) {}
+
+      return { ok: true, headers: normalizedHeaders, status: response.status, url, body: bodyText, cookies };
     } catch (e: any) {
       clearTimeout(timeoutId);
       return { ok: false, error: e?.message || 'Connection failed' };
@@ -698,6 +734,8 @@ async function checkHttpHeaders(target: string): Promise<any> {
       error_msg: fetchRes.error || 'HTTP/HTTPS connection refused or timed out',
       msg: fetchRes.error || 'HTTP/HTTPS connection refused or timed out',
       headers: {},
+      body: '',
+      cookies: [],
       security_headers: {
         'X-Frame-Options': 'Unreachable',
         'Content-Security-Policy': 'None',
@@ -765,6 +803,8 @@ async function checkHttpHeaders(target: string): Promise<any> {
   return {
     status: 'success',
     headers: normalizedHeaders,
+    body: fetchRes.body || '',
+    cookies: fetchRes.cookies || [],
     security_headers: {
       'X-Frame-Options': xfo || 'Absent',
       'Content-Security-Policy': csp || 'Absent',
@@ -776,6 +816,419 @@ async function checkHttpHeaders(target: string): Promise<any> {
     present_headers: presentHeaders,
     missing_headers: missingHeaders,
     clickjacking: clickjackingObj,
+  };
+}
+
+function detectTechnologyStack(
+  target: string,
+  headers: Record<string, string> = {},
+  htmlBody: string = '',
+  cookies: string[] = []
+): any {
+  const normHeaders: Record<string, string> = {};
+  for (const [k, v] of Object.entries(headers || {})) {
+    normHeaders[k.toLowerCase()] = String(v);
+  }
+
+  const rawServer = normHeaders['server'] || '';
+  const xPoweredBy = normHeaders['x-powered-by'] || '';
+  const viaHeader = normHeaders['via'] || '';
+  const htmlLower = (htmlBody || '').toLowerCase();
+  const allCookies = cookies.join('; ').toLowerCase();
+
+  // 1. Detect Web Server
+  let detectedServer = 'Standard HTTP/2 Gateway (Hidden Banner)';
+  if (rawServer) {
+    const sLower = rawServer.toLowerCase();
+    if (sLower.includes('cloudflare')) {
+      detectedServer = 'Cloudflare Edge Web Server';
+    } else if (sLower.includes('nginx')) {
+      const match = rawServer.match(/nginx\/([0-9.]+)/i);
+      detectedServer = match ? `Nginx ${match[1]} (Reverse Proxy)` : 'Nginx HTTP Server';
+    } else if (sLower.includes('apache')) {
+      const match = rawServer.match(/apache\/([0-9.]+)/i);
+      detectedServer = match ? `Apache HTTP Server ${match[1]}` : 'Apache HTTP Server';
+    } else if (sLower.includes('litespeed') || sLower.includes('openlitespeed')) {
+      detectedServer = 'LiteSpeed Web Server';
+    } else if (sLower.includes('caddy')) {
+      detectedServer = 'Caddy Web Server';
+    } else if (sLower.includes('microsoft-iis')) {
+      const match = rawServer.match(/microsoft-iis\/([0-9.]+)/i);
+      detectedServer = match ? `Microsoft IIS ${match[1]}` : 'Microsoft IIS';
+    } else if (sLower.includes('openresty')) {
+      detectedServer = 'OpenResty (Nginx + Lua)';
+    } else if (sLower.includes('gws') || sLower.includes('esf')) {
+      detectedServer = 'Google Web Server (GWS)';
+    } else if (sLower.includes('envoy')) {
+      detectedServer = 'Envoy Proxy Gateway';
+    } else if (sLower.includes('kestrel')) {
+      detectedServer = 'Microsoft Kestrel (ASP.NET Core)';
+    } else if (sLower.includes('cowboy')) {
+      detectedServer = 'Cowboy (Erlang/OTP)';
+    } else if (sLower.includes('tornado')) {
+      detectedServer = 'TornadoServer (Python)';
+    } else if (sLower.includes('traefik')) {
+      detectedServer = 'Traefik Reverse Proxy';
+    } else {
+      detectedServer = rawServer;
+    }
+  } else if (xPoweredBy) {
+    if (xPoweredBy.toLowerCase().includes('express')) {
+      detectedServer = 'Node.js / Express Web Server';
+    } else if (xPoweredBy.toLowerCase().includes('next.js')) {
+      detectedServer = 'Next.js SSR Edge Server';
+    } else if (xPoweredBy.toLowerCase().includes('php')) {
+      detectedServer = 'Apache / PHP Embedded Server';
+    }
+  } else if (normHeaders['x-vercel-id']) {
+    detectedServer = 'Vercel Edge Network';
+  } else if (normHeaders['cf-ray']) {
+    detectedServer = 'Cloudflare Anycast Gateway';
+  }
+
+  // 2. Detect CMS / Platform
+  let detectedCms = 'None Detected';
+  const metaGenMatch =
+    htmlBody.match(/<meta[^>]+name=["']generator["'][^>]+content=["']([^"']+)["']/i) ||
+    htmlBody.match(/<meta[^>]+content=["']([^"']+)["'][^>]+name=["']generator["']/i);
+  const generatorContent = metaGenMatch ? metaGenMatch[1] : '';
+
+  if (
+    htmlLower.includes('wp-content/') ||
+    htmlLower.includes('wp-includes/') ||
+    htmlLower.includes('wp-json/') ||
+    htmlLower.includes('yoast seo') ||
+    generatorContent.toLowerCase().includes('wordpress')
+  ) {
+    detectedCms =
+      generatorContent && generatorContent.toLowerCase().includes('wordpress')
+        ? generatorContent
+        : 'WordPress CMS';
+  } else if (
+    htmlLower.includes('cdn.shopify.com') ||
+    htmlLower.includes('shopify.theme') ||
+    normHeaders['x-shopid']
+  ) {
+    detectedCms = 'Shopify Ecommerce Platform';
+  } else if (
+    htmlLower.includes('drupal.settings') ||
+    htmlLower.includes('drupal.js') ||
+    generatorContent.toLowerCase().includes('drupal') ||
+    normHeaders['x-drupal-cache']
+  ) {
+    detectedCms =
+      generatorContent && generatorContent.toLowerCase().includes('drupal')
+        ? generatorContent
+        : 'Drupal CMS';
+  } else if (
+    generatorContent.toLowerCase().includes('joomla') ||
+    htmlLower.includes('/media/jui/')
+  ) {
+    detectedCms = 'Joomla! CMS';
+  } else if (
+    htmlLower.includes('data-wf-page') ||
+    htmlLower.includes('data-wf-site') ||
+    htmlLower.includes('assets.website-files.com') ||
+    generatorContent.toLowerCase().includes('webflow')
+  ) {
+    detectedCms = 'Webflow';
+  } else if (
+    htmlLower.includes('wix.com') ||
+    htmlLower.includes('wix-warmup-data') ||
+    normHeaders['x-wix-request-id']
+  ) {
+    detectedCms = 'Wix Platform';
+  } else if (
+    generatorContent.toLowerCase().includes('ghost') ||
+    htmlLower.includes('ghost-root')
+  ) {
+    detectedCms = generatorContent || 'Ghost Publishing Platform';
+  } else if (
+    htmlLower.includes('squarespace.com') ||
+    htmlLower.includes('static1.squarespace.com')
+  ) {
+    detectedCms = 'Squarespace';
+  } else if (
+    htmlLower.includes('hubspot') ||
+    htmlLower.includes('hs-scripts.com')
+  ) {
+    detectedCms = 'HubSpot CMS';
+  } else if (
+    htmlLower.includes('mage.cookies') ||
+    htmlLower.includes('/skin/frontend/') ||
+    htmlLower.includes('/static/frontend/')
+  ) {
+    detectedCms = 'Magento / Adobe Commerce';
+  }
+
+  // 3. Detect Frontend Frameworks & Libraries
+  const frameworks: string[] = [];
+
+  const hasNext =
+    htmlLower.includes('/_next/') ||
+    htmlLower.includes('id="__next"') ||
+    htmlLower.includes('__next_data__') ||
+    normHeaders['x-nextjs-page'] !== undefined ||
+    xPoweredBy.toLowerCase().includes('next.js');
+
+  const hasNuxt =
+    htmlLower.includes('/_nuxt/') ||
+    htmlLower.includes('id="__nuxt"') ||
+    htmlLower.includes('__nuxt__');
+
+  const hasReact =
+    hasNext ||
+    htmlLower.includes('react.production.min.js') ||
+    htmlLower.includes('react-dom') ||
+    htmlLower.includes('__reactfiber') ||
+    htmlLower.includes('data-reactroot') ||
+    htmlLower.includes('_reactlistening') ||
+    htmlLower.includes('gatsby');
+
+  const hasVue =
+    hasNuxt ||
+    htmlLower.includes('vue.global') ||
+    htmlLower.includes('vue.min.js') ||
+    htmlLower.includes('data-v-') ||
+    htmlLower.includes('v-bind:') ||
+    htmlLower.includes('__vue__');
+
+  const hasAngular =
+    htmlLower.includes('ng-app') ||
+    htmlLower.includes('ng-version') ||
+    htmlLower.includes('<app-root') ||
+    htmlLower.includes('angular.js') ||
+    htmlLower.includes('angular.min.js') ||
+    htmlLower.includes('_nghost') ||
+    htmlLower.includes('_ngcontent');
+
+  const hasSvelte =
+    htmlLower.includes('svelte-') ||
+    htmlLower.includes('__svelte__') ||
+    htmlLower.includes('/_app/immutable/');
+
+  const hasJquery =
+    htmlLower.includes('jquery.js') ||
+    htmlLower.includes('jquery.min.js') ||
+    htmlLower.includes('jquery/') ||
+    htmlLower.includes('$.fn.jquery');
+
+  const hasTailwind =
+    htmlLower.includes('tailwindcss') ||
+    htmlLower.includes('tailwind') ||
+    (htmlBody.includes('font-sans') && htmlBody.includes('items-center'));
+
+  const hasBootstrap =
+    htmlLower.includes('bootstrap.min.css') ||
+    htmlLower.includes('bootstrap.css') ||
+    htmlLower.includes('bootstrap.bundle') ||
+    htmlLower.includes('data-bs-toggle');
+
+  const hasAlpine =
+    htmlLower.includes('alpine.js') ||
+    htmlLower.includes('x-data=') ||
+    htmlLower.includes('x-bind:');
+
+  const hasVite =
+    htmlLower.includes('/@vite/') ||
+    htmlLower.includes('vite/client') ||
+    htmlLower.includes('vite.svg');
+
+  if (hasNext) frameworks.push('Next.js');
+  if (hasReact && !frameworks.includes('React')) frameworks.push('React');
+  if (hasNuxt) frameworks.push('Nuxt.js');
+  if (hasVue && !frameworks.includes('Vue.js')) frameworks.push('Vue.js');
+  if (hasAngular) frameworks.push('Angular');
+  if (hasSvelte) frameworks.push('Svelte / SvelteKit');
+  if (hasVite) frameworks.push('Vite');
+  if (hasJquery) frameworks.push('jQuery');
+  if (hasTailwind) frameworks.push('Tailwind CSS');
+  if (hasBootstrap) frameworks.push('Bootstrap');
+  if (hasAlpine) frameworks.push('Alpine.js');
+
+  const jsFrameworks = frameworks.length > 0 ? frameworks : ['HTML5 / Modern DOM', 'Vanilla JavaScript'];
+
+  // 4. Detect Backend Technology
+  let detectedBackend = 'Hidden Backend Runtime (Hardened Headers)';
+  if (xPoweredBy) {
+    if (xPoweredBy.toLowerCase().includes('php')) {
+      detectedBackend = `PHP Engine (${xPoweredBy})`;
+    } else if (xPoweredBy.toLowerCase().includes('express')) {
+      detectedBackend = 'Node.js (Express Framework)';
+    } else if (xPoweredBy.toLowerCase().includes('asp.net')) {
+      detectedBackend = 'Microsoft ASP.NET Framework';
+    } else if (xPoweredBy.toLowerCase().includes('next.js')) {
+      detectedBackend = 'Next.js SSR Backend (Node.js)';
+    } else {
+      detectedBackend = xPoweredBy;
+    }
+  } else if (allCookies.includes('phpsessid') || allCookies.includes('laravel_session')) {
+    detectedBackend = 'PHP Runtime (Session Cookie Signature)';
+  } else if (allCookies.includes('jsessionid')) {
+    detectedBackend = 'Java Virtual Machine (Spring / Tomcat)';
+  } else if (allCookies.includes('connect.sid')) {
+    detectedBackend = 'Node.js (Express Session Middleware)';
+  } else if (allCookies.includes('csrftoken') || allCookies.includes('django')) {
+    detectedBackend = 'Python (Django Framework)';
+  } else if (allCookies.includes('flask') || allCookies.includes('session=')) {
+    detectedBackend = 'Python (Flask / Werkzeug Framework)';
+  } else if (allCookies.includes('asp.net_sessionid') || normHeaders['x-aspnet-version']) {
+    detectedBackend = 'Microsoft .NET Runtime';
+  } else if (normHeaders['x-runtime']) {
+    detectedBackend = 'Ruby on Rails / Rack Engine';
+  } else if (normHeaders['x-vercel-id']) {
+    detectedBackend = 'Vercel Serverless Functions / Node.js';
+  } else if (normHeaders['cf-ray'] && rawServer.toLowerCase().includes('cloudflare')) {
+    detectedBackend = 'Cloudflare Workers / V8 V8 Isolates';
+  } else if (detectedCms.toLowerCase().includes('wordpress')) {
+    detectedBackend = 'PHP Engine (WordPress Core)';
+  }
+
+  // 5. Detect CDN
+  let detectedCdn = 'Direct Origin / Uncached';
+  if (
+    normHeaders['cf-ray'] ||
+    normHeaders['cf-cache-status'] ||
+    rawServer.toLowerCase().includes('cloudflare')
+  ) {
+    detectedCdn = 'Cloudflare Anycast Global CDN';
+  } else if (
+    normHeaders['x-amz-cf-id'] ||
+    normHeaders['x-amz-cf-pop'] ||
+    viaHeader.toLowerCase().includes('cloudfront')
+  ) {
+    detectedCdn = 'Amazon CloudFront CDN';
+  } else if (
+    normHeaders['x-fastly-request-id'] ||
+    normHeaders['fastly-debug-digest']
+  ) {
+    detectedCdn = 'Fastly Edge Cloud CDN';
+  } else if (
+    normHeaders['x-akamai-transformed'] ||
+    normHeaders['akamai-origin-hop'] ||
+    rawServer.toLowerCase().includes('akamai')
+  ) {
+    detectedCdn = 'Akamai Intelligent Edge Network';
+  } else if (
+    normHeaders['x-vercel-id'] ||
+    normHeaders['x-vercel-cache']
+  ) {
+    detectedCdn = 'Vercel Global Edge Network';
+  } else if (
+    normHeaders['x-nf-request-id'] ||
+    normHeaders['x-netlify-request-id']
+  ) {
+    detectedCdn = 'Netlify High-Performance Edge';
+  } else if (viaHeader.toLowerCase().includes('google')) {
+    detectedCdn = 'Google Cloud CDN / Google Front End';
+  }
+
+  // 6. Detect WAF / Firewall
+  let detectedWaf = 'None Detected (Standard Perimeter)';
+  if (
+    normHeaders['cf-ray'] ||
+    normHeaders['cf-mitigated'] ||
+    allCookies.includes('__cf_bm') ||
+    allCookies.includes('cf_clearance')
+  ) {
+    detectedWaf = 'Cloudflare WAF & Threat Intelligence';
+  } else if (
+    normHeaders['x-amzn-waf-action'] ||
+    normHeaders['x-amz-waf-request-id']
+  ) {
+    detectedWaf = 'AWS WAF (Web Application Firewall)';
+  } else if (
+    normHeaders['x-iinfo'] ||
+    allCookies.includes('incap_ses') ||
+    allCookies.includes('visid_incap')
+  ) {
+    detectedWaf = 'Imperva Incapsula Enterprise WAF';
+  } else if (normHeaders['x-akamai-request-id']) {
+    detectedWaf = 'Akamai Kona Site Defender';
+  } else if (
+    normHeaders['x-sucuri-id'] ||
+    rawServer.toLowerCase().includes('sucuri')
+  ) {
+    detectedWaf = 'Sucuri Cloudproxy WAF';
+  } else if (rawServer.toLowerCase().includes('mod_security')) {
+    detectedWaf = 'OWASP ModSecurity Core Rule Set';
+  } else if (allCookies.includes('bigipserver') || allCookies.includes('ts01')) {
+    detectedWaf = 'F5 BIG-IP Application Security Manager';
+  }
+
+  // 7. Detect Analytics / Trackers
+  const analytics: string[] = [];
+  if (
+    htmlLower.includes('googletagmanager.com') ||
+    htmlLower.includes('google-analytics.com') ||
+    htmlLower.includes('gtag(') ||
+    htmlLower.includes('gtm-')
+  ) {
+    analytics.push('Google Analytics / GTM');
+  }
+  if (htmlLower.includes('cloudflareinsights.com/beacon.min.js')) {
+    analytics.push('Cloudflare Web Analytics');
+  }
+  if (htmlLower.includes('fbevents.js') || htmlLower.includes('connect.facebook.net')) {
+    analytics.push('Meta Pixel');
+  }
+  if (htmlLower.includes('static.hotjar.com')) {
+    analytics.push('Hotjar Behavioral Analytics');
+  }
+  if (htmlLower.includes('segment.com/analytics.js')) {
+    analytics.push('Segment CDP');
+  }
+  if (htmlLower.includes('clarity.ms')) {
+    analytics.push('Microsoft Clarity');
+  }
+  if (htmlLower.includes('datadog-rum')) {
+    analytics.push('Datadog Real User Monitoring');
+  }
+  if (htmlLower.includes('newrelic.com') || htmlLower.includes('nreum')) {
+    analytics.push('New Relic Browser Agent');
+  }
+
+  // Build summary classification
+  let stackClassification = 'Modern Web Architecture';
+  if (detectedCms !== 'None Detected') {
+    stackClassification = `${detectedCms} Ecosystem`;
+  } else if (hasNext || (hasReact && detectedCdn.includes('Vercel'))) {
+    stackClassification = 'Cloud-Native JAMstack (Next.js / Edge)';
+  } else if (hasReact || hasVue || hasAngular) {
+    stackClassification = 'Single Page Application (SPA)';
+  } else if (detectedServer.includes('Nginx') || detectedServer.includes('Apache')) {
+    stackClassification = 'Traditional Web Host';
+  }
+
+  return {
+    status: 'success',
+    web_server: detectedServer,
+    server: detectedServer,
+    cms: detectedCms,
+    js_frameworks: jsFrameworks,
+    frameworks: jsFrameworks,
+    backend: detectedBackend,
+    cdn: detectedCdn,
+    waf: detectedWaf,
+    analytics: analytics.length > 0 ? analytics : ['None Detected'],
+    summary: {
+      stack_classification: stackClassification,
+      waf_active: !detectedWaf.includes('None Detected'),
+      cdn_active: !detectedCdn.includes('Direct Origin'),
+      frameworks_count: frameworks.length,
+    },
+    detected: {
+      server: detectedServer,
+      web_server: detectedServer,
+      cms: detectedCms,
+      backend: detectedBackend,
+      waf_cdn: [detectedWaf, detectedCdn].filter(x => !x.includes('None Detected') && !x.includes('Direct Origin')),
+      js_frameworks: jsFrameworks,
+      frameworks: jsFrameworks,
+      cdn: detectedCdn,
+      waf: detectedWaf,
+      analytics: analytics.length > 0 ? analytics : ['None Detected'],
+    },
   };
 }
 
@@ -1400,18 +1853,39 @@ app.get('/scan/stream', async (req, res) => {
       sendEvent({ percent: currentPercent, log: '[!] Scan cancelled by operator.', status: 'cancelled' });
       return res.end();
     }
-    sendEvent({ percent: currentPercent, log: '[i] Detecting web server signatures and technology stack...', status: 'info' });
+    sendEvent({ percent: currentPercent, log: '[i] Fingerprinting web server, frontend frameworks, and edge perimeter...', status: 'info' });
 
-    const serverHeader = scanResults.modules.headers?.headers?.server || 'Edge Web Server (HTTP/2)';
-    scanResults.modules.tech = {
-      status: 'success',
-      detected: {
-        server: serverHeader,
-        waf_cdn: ['Edge Cloudflare / Akamai Protective Proxy'],
-        js_frameworks: ['React', 'Next.js', 'Vite Bundle'],
-        cms: [],
-      },
-    };
+    let headers = scanResults.modules.headers?.headers;
+    let body = scanResults.modules.headers?.body;
+    let cookies = scanResults.modules.headers?.cookies;
+
+    if (!headers || body === undefined) {
+      try {
+        const fetchResult = await checkHttpHeaders(cleanTarget);
+        if (fetchResult && fetchResult.headers) {
+          headers = fetchResult.headers;
+          body = fetchResult.body || '';
+          cookies = fetchResult.cookies || [];
+          if (!scanResults.modules.headers) {
+            scanResults.modules.headers = fetchResult;
+          }
+        }
+      } catch (err) {
+        console.warn('[Tech] Fetch target page warning:', err);
+      }
+    }
+
+    const techData = detectTechnologyStack(cleanTarget, headers || {}, body || '', cookies || []);
+    scanResults.modules.tech = techData;
+
+    sendEvent({ percent: currentPercent, log: `[+] Web Server: ${techData.web_server}`, status: 'info' });
+    sendEvent({ percent: currentPercent, log: `[+] Frontend Stack: ${techData.js_frameworks.join(', ')}`, status: 'info' });
+    if (techData.cms !== 'None Detected') {
+      sendEvent({ percent: currentPercent, log: `[+] CMS Platform: ${techData.cms}`, status: 'info' });
+    }
+    if (techData.summary?.waf_active) {
+      sendEvent({ percent: currentPercent, log: `[+] Perimeter Shield: ${techData.waf}`, status: 'info' });
+    }
 
     currentPercent += increment;
     sendEvent({ percent: currentPercent, log: '[+] Web technology fingerprinting concluded.', status: 'success' });

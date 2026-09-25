@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ShieldAlert, FileText, Download, Printer, BrainCircuit, Globe, Server, CheckCircle2, ChevronRight, Copy, Check } from 'lucide-react';
+import { ShieldAlert, FileText, Download, Printer, BrainCircuit, Globe, Server, CheckCircle2, ChevronRight, Copy, Check, Layers } from 'lucide-react';
 import { api } from '../services/api';
 
 type TabType = 'overview' | 'whois' | 'dns' | 'ssl' | 'headers' | 'clickjacking' | 'tech' | 'portscan' | 'advisor';
@@ -583,9 +583,17 @@ export default function ScanDetail() {
             {/* 7. Tech Tab */}
             {activeTab === 'tech' && (
               <div className="space-y-6">
-                <div className="border-b border-border pb-4">
-                  <h3 className="font-heading font-black text-sm text-text-primary uppercase tracking-wider">Web Technology Analysis</h3>
-                  <p className="text-[11px] text-text-secondary">Identified servers, libraries, and frameworks.</p>
+                <div className="border-b border-border pb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                  <div>
+                    <h3 className="font-heading font-black text-sm text-text-primary uppercase tracking-wider">Web Technology Analysis</h3>
+                    <p className="text-[11px] text-text-secondary">Identified web servers, libraries, CMS, edge CDN, and perimeter protection.</p>
+                  </div>
+                  {modules.tech?.summary?.stack_classification && (
+                    <div className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-primary/10 border border-primary/20 text-primary text-[10px] font-mono font-bold rounded-sm uppercase tracking-wider self-start sm:self-auto">
+                      <Layers className="h-3 w-3" />
+                      <span>{modules.tech.summary.stack_classification}</span>
+                    </div>
+                  )}
                 </div>
 
                 {!modules.tech || modules.tech.status === 'error' ? (
@@ -595,52 +603,107 @@ export default function ScanDetail() {
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {/* Web Server */}
-                    <div className="p-4 bg-surface-muted border border-border rounded-md text-xs space-y-1.5">
-                      <span className="text-[9px] font-mono tracking-widest text-text-secondary uppercase block">Web Server</span>
-                      <p className="font-heading font-bold text-text-primary">{modules.tech.web_server || modules.tech.server || "Not Detected"}</p>
-                    </div>
-                    {/* CMS */}
-                    <div className="p-4 bg-surface-muted border border-border rounded-md text-xs space-y-1.5">
-                      <span className="text-[9px] font-mono tracking-widest text-text-secondary uppercase block">CMS / Platform</span>
-                      <p className="font-heading font-bold text-text-primary">{modules.tech.cms || "Not Detected"}</p>
-                    </div>
-                    {/* JS Frameworks */}
-                    <div className="p-4 bg-surface-muted border border-border rounded-md text-xs space-y-1.5">
-                      <span className="text-[9px] font-mono tracking-widest text-text-secondary uppercase block">Frontend / JS Frameworks</span>
-                      <p className="font-heading font-bold text-text-primary">
-                        {Array.isArray(modules.tech.js_frameworks)
-                          ? modules.tech.js_frameworks.filter((f: string) => f !== 'None Detected').join(', ') || 'None Detected'
-                          : (modules.tech.js_frameworks || modules.tech.frameworks?.join(', ') || "Not Detected")}
-                      </p>
-                    </div>
-                    {/* Backend */}
-                    <div className="p-4 bg-surface-muted border border-border rounded-md text-xs space-y-1.5">
-                      <span className="text-[9px] font-mono tracking-widest text-text-secondary uppercase block">Backend Technology</span>
-                      <p className="font-heading font-bold text-text-primary">{modules.tech.backend || "Not Detected"}</p>
-                    </div>
-                    {/* CDN */}
-                    <div className="p-4 bg-surface-muted border border-border rounded-md text-xs space-y-1.5">
-                      <span className="text-[9px] font-mono tracking-widest text-text-secondary uppercase block">CDN</span>
-                      <p className="font-heading font-bold text-text-primary">{modules.tech.cdn || "Not Detected"}</p>
-                    </div>
-                    {/* WAF */}
-                    <div className="p-4 bg-surface-muted border border-border rounded-md text-xs space-y-1.5">
-                      <span className="text-[9px] font-mono tracking-widest text-text-secondary uppercase block">WAF / Firewall</span>
-                      <p className={`font-heading font-bold ${modules.tech.waf && modules.tech.waf !== 'Unknown' ? 'text-secondary' : 'text-text-primary'}`}>
-                        {modules.tech.waf || "Not Detected"}
-                      </p>
-                    </div>
-                    {/* Analytics */}
-                    {modules.tech.analytics && (
-                      <div className="p-4 bg-surface-muted border border-border rounded-md text-xs space-y-1.5 md:col-span-2">
-                        <span className="text-[9px] font-mono tracking-widest text-text-secondary uppercase block">Analytics / Trackers</span>
-                        <p className="font-heading font-bold text-text-primary">
-                          {Array.isArray(modules.tech.analytics)
-                            ? modules.tech.analytics.filter((a: string) => a !== 'None Detected').join(', ') || 'None Detected'
-                            : modules.tech.analytics}
-                        </p>
+                    <div className="p-4 bg-surface-muted border border-border rounded-md text-xs space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[9px] font-mono tracking-widest text-text-secondary uppercase block">Web Server</span>
+                        <span className="text-[9px] font-mono text-primary px-1.5 py-0.5 bg-primary/5 rounded border border-primary/10">HTTP Engine</span>
                       </div>
-                    )}
+                      <p className="font-heading font-bold text-text-primary text-sm">
+                        {modules.tech.web_server || modules.tech.server || modules.tech.detected?.server || modules.tech.detected?.web_server || "Not Detected"}
+                      </p>
+                    </div>
+
+                    {/* CMS / Platform */}
+                    <div className="p-4 bg-surface-muted border border-border rounded-md text-xs space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[9px] font-mono tracking-widest text-text-secondary uppercase block">CMS / Platform</span>
+                        <span className="text-[9px] font-mono text-text-secondary px-1.5 py-0.5 bg-background rounded border border-border">Core System</span>
+                      </div>
+                      <p className="font-heading font-bold text-text-primary text-sm">
+                        {modules.tech.cms || modules.tech.detected?.cms || "None Detected"}
+                      </p>
+                    </div>
+
+                    {/* JS Frameworks */}
+                    <div className="p-4 bg-surface-muted border border-border rounded-md text-xs space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[9px] font-mono tracking-widest text-text-secondary uppercase block">Frontend / JS Frameworks</span>
+                        <span className="text-[9px] font-mono text-primary px-1.5 py-0.5 bg-primary/5 rounded border border-primary/10">Client Runtime</span>
+                      </div>
+                      {(() => {
+                        const rawFw = modules.tech.js_frameworks || modules.tech.frameworks || modules.tech.detected?.js_frameworks || modules.tech.detected?.frameworks;
+                        const fwList: string[] = Array.isArray(rawFw) ? rawFw : typeof rawFw === 'string' ? rawFw.split(',').map((s: string) => s.trim()) : [];
+                        const validFw = fwList.filter((f: string) => f && f !== 'None Detected');
+                        if (!validFw.length) return <p className="font-heading font-bold text-text-secondary text-sm">None Detected</p>;
+                        return (
+                          <div className="flex flex-wrap gap-1.5 pt-1">
+                            {validFw.map((f: string, i: number) => (
+                              <span key={i} className="inline-flex items-center px-2 py-0.5 rounded-sm bg-primary/10 border border-primary/20 text-primary text-[11px] font-mono font-bold">
+                                {f}
+                              </span>
+                            ))}
+                          </div>
+                        );
+                      })()}
+                    </div>
+
+                    {/* Backend */}
+                    <div className="p-4 bg-surface-muted border border-border rounded-md text-xs space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[9px] font-mono tracking-widest text-text-secondary uppercase block">Backend Technology</span>
+                        <span className="text-[9px] font-mono text-text-secondary px-1.5 py-0.5 bg-background rounded border border-border">Server Stack</span>
+                      </div>
+                      <p className="font-heading font-bold text-text-primary text-sm">
+                        {modules.tech.backend || modules.tech.detected?.backend || "Hidden / Hardened Headers"}
+                      </p>
+                    </div>
+
+                    {/* CDN */}
+                    <div className="p-4 bg-surface-muted border border-border rounded-md text-xs space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[9px] font-mono tracking-widest text-text-secondary uppercase block">CDN (Content Delivery Network)</span>
+                        <span className="text-[9px] font-mono text-primary px-1.5 py-0.5 bg-primary/5 rounded border border-primary/10">Edge Cache</span>
+                      </div>
+                      <p className="font-heading font-bold text-text-primary text-sm">
+                        {modules.tech.cdn || (Array.isArray(modules.tech.detected?.cdn) ? modules.tech.detected.cdn.join(', ') : modules.tech.detected?.cdn) || (Array.isArray(modules.tech.detected?.waf_cdn) ? modules.tech.detected.waf_cdn.find((w: string) => w.toLowerCase().includes('cdn')) : null) || "Direct Origin / Uncached"}
+                      </p>
+                    </div>
+
+                    {/* WAF */}
+                    <div className="p-4 bg-surface-muted border border-border rounded-md text-xs space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[9px] font-mono tracking-widest text-text-secondary uppercase block">WAF / Firewall</span>
+                        <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded border ${(modules.tech.waf && !modules.tech.waf.includes('None Detected')) || (modules.tech.detected?.waf && !String(modules.tech.detected.waf).includes('None Detected')) ? 'text-primary bg-primary/10 border-primary/30' : 'text-text-secondary bg-background border-border'}`}>
+                          {(modules.tech.waf && !modules.tech.waf.includes('None Detected')) || (modules.tech.detected?.waf && !String(modules.tech.detected.waf).includes('None Detected')) ? 'Active Shield' : 'Standard Ingress'}
+                        </span>
+                      </div>
+                      <p className={`font-heading font-bold text-sm ${(modules.tech.waf && !modules.tech.waf.includes('None Detected')) || (modules.tech.detected?.waf && !String(modules.tech.detected.waf).includes('None Detected')) ? 'text-primary' : 'text-text-primary'}`}>
+                        {modules.tech.waf || (Array.isArray(modules.tech.detected?.waf) ? modules.tech.detected.waf.join(', ') : modules.tech.detected?.waf) || (Array.isArray(modules.tech.detected?.waf_cdn) ? modules.tech.detected.waf_cdn.find((w: string) => w.toLowerCase().includes('waf')) : null) || "None Detected"}
+                      </p>
+                    </div>
+
+                    {/* Analytics / Trackers */}
+                    <div className="p-4 bg-surface-muted border border-border rounded-md text-xs space-y-2 md:col-span-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[9px] font-mono tracking-widest text-text-secondary uppercase block">Analytics & Telemetry Trackers</span>
+                        <span className="text-[9px] font-mono text-secondary px-1.5 py-0.5 bg-secondary/5 rounded border border-secondary/10">Telemetry</span>
+                      </div>
+                      {(() => {
+                        const rawAn = modules.tech.analytics || modules.tech.detected?.analytics;
+                        const anList: string[] = Array.isArray(rawAn) ? rawAn : typeof rawAn === 'string' ? rawAn.split(',').map((s: string) => s.trim()) : [];
+                        const validAn = anList.filter((a: string) => a && a !== 'None Detected');
+                        if (!validAn.length) return <p className="font-heading font-bold text-text-secondary text-sm">None Detected</p>;
+                        return (
+                          <div className="flex flex-wrap gap-1.5 pt-1">
+                            {validAn.map((a: string, i: number) => (
+                              <span key={i} className="inline-flex items-center px-2 py-0.5 rounded-sm bg-secondary/10 border border-secondary/20 text-secondary text-[11px] font-mono font-bold">
+                                {a}
+                              </span>
+                            ))}
+                          </div>
+                        );
+                      })()}
+                    </div>
                   </div>
                 )}
               </div>
